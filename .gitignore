@@ -1,0 +1,29 @@
+# backend
+**/bin/
+**/obj/
+**/appsettings.Development.json
+**/secrets.json
+**/*.user
+**/*.suo
+**/*.userosscache
+**/*.sln.docstates
+**/.vs/
+backend/swagger*.log
+backend/swagger*.txt
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# common
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# uploaded/static generated assets (keep code, ignore runtime uploads)
+backend/CuteBlogSystem/wwwroot/Picture/Avatar/UserUploadAvatar/
+backend/CuteBlogSystem/wwwroot/Picture/ArticleImage/Cover/
+backend/CuteBlogSystem/wwwroot/Picture/ArticleImage/Inline/
+backend/CuteBlogSystem/wwwroot/Picture/WebsiteDecorationImage/
