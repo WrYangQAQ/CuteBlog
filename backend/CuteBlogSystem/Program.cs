@@ -18,7 +18,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("MyPolicy", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173"
+            )
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -94,6 +97,14 @@ app.UseStaticFiles();
 app.UseCors("MyPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// 访问 / 时重定向到 /app/index.html
+app.MapGet("/", context =>
+{
+    context.Response.Redirect("/app/index.html");
+    return Task.CompletedTask;
+});
+
 app.MapControllers();
 app.UseSwagger();
 app.UseSwaggerUI();

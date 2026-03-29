@@ -32,7 +32,7 @@ async function submit() {
 <template>
   <section class="panel auth-panel">
     <h2>创建账号</h2>
-    <p class="subtitle">加入 CuteBlogSystem，开始记录吧</p>
+    <p class="subtitle">加入 CuteBlog，开始记录吧</p>
 
     <form class="form-grid" @submit.prevent="submit">
       <label>

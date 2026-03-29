@@ -7,6 +7,7 @@ using CuteBlogSystem.Util;
 using Microsoft.Identity.Client;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Data;
+using System.Text.RegularExpressions;
 
 namespace CuteBlogSystem.Service
 {
@@ -26,6 +27,7 @@ namespace CuteBlogSystem.Service
         private readonly string[] _allowedExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
         private const long MaxPictureAvatarSize = 2 * 1024 * 1024;
         private const long MaxPictureWebsiteDecorationImageSize = 20 * 1024 * 1024;
+        private const long maxLength = 20;
 
         public UserService(UserRepository userRepository, 
                            JwtUtil jwtUtil, 
@@ -51,6 +53,23 @@ namespace CuteBlogSystem.Service
         {
             User user = new User();
 
+            // 检测密码是否存在非法字符
+            if (string.IsNullOrEmpty(registerDTO.Password))
+            {
+                return new ApiResponse(false, "密码不能为空！");
+            }
+
+            if (registerDTO.Password.Length > maxLength)
+            {
+                return new ApiResponse(false, "密码长度过长！");
+            }
+
+            // 只允许 a-z A-Z 0-9 ! .
+            if( !Regex.IsMatch(registerDTO.Password, @"^[a-zA-Z0-9!.]+$"))
+            {
+                return new ApiResponse(false, "密码只能包含字母、数字和 ! . 这几个特殊字符！");
+            }
+
             // 将dto中的数据映射到实体类中
             user.UserName = registerDTO.Username;
             user.Email = registerDTO.Email;
@@ -75,6 +94,9 @@ namespace CuteBlogSystem.Service
                 _logger.LogWarning("注册失败！邮箱已被使用！邮箱：{Email}", user.Email);
                 return new ApiResponse(false, "注册失败！邮箱已被使用！");
             }
+
+            // 检查密码是否存在非法字符
+
 
             // 调用UserRepository将用户数据保存到数据库中
             var result = await _userRepository.AddUserAsync(user);

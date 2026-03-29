@@ -18,9 +18,10 @@ npm run dev
 
 ## 环境变量（可选）
 
-如果你不想使用代理，可创建 `.env`：
+当前仓库已包含 `.env`，默认指向你当前的 Sakura 隧道地址。  
+如果后续隧道地址变化，可修改 `.env`：
 
 ```env
-VITE_API_BASE_URL=https://localhost:7181
-VITE_API_ORIGIN=https://localhost:7181
+VITE_API_BASE_URL=https://119.84.246.218:24170
+VITE_API_ORIGIN=https://119.84.246.218:24170
 ```

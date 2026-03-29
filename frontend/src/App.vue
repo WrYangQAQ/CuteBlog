@@ -24,7 +24,7 @@ function logout() {
     <header class="cute-header">
       <div class="brand" @click="$router.push('/')">
         <span class="brand-badge">萌</span>
-        <h1>CuteBlogSystem</h1>
+        <h1>CuteBlog</h1>
       </div>
       <nav class="nav-links">
         <router-link v-if="isLoggedIn" to="/">首页</router-link>
