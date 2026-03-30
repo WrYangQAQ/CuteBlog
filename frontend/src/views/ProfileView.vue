@@ -1,13 +1,13 @@
 <script setup>
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
-import {
-  getMyArticlesApi,
-  updateProfileApi,
-  uploadAvatarApi
-} from "../api/auth";
+import { getMyArticlesApi, updateProfileApi, uploadAvatarApi } from "../api/auth";
+import { getArticlesApi } from "../api/articles";
+import ArticleCard from "../components/ArticleCard.vue";
 import { formatDate, toAbsoluteAsset } from "../utils/asset";
 
+const router = useRouter();
 const authStore = useAuthStore();
 const loading = ref(false);
 const message = ref("");
@@ -15,10 +15,17 @@ const myPage = ref(1);
 const myPageSize = 5;
 const myArticles = ref([]);
 const totalCount = ref(0);
+const allArticles = ref([]);
 
 const profileForm = reactive({
   nickName: "",
   bio: ""
+});
+
+const likedArticlesRich = computed(() => {
+  const liked = authStore.profile?.articlesLike || [];
+  const map = new Map((allArticles.value || []).map((i) => [Number(i.id), i]));
+  return liked.map((item) => map.get(Number(item.id)) || item);
 });
 
 async function loadProfile() {
@@ -32,6 +39,15 @@ async function loadProfile() {
     message.value = err?.payload?.message || err.message || "获取资料失败";
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadAllArticles() {
+  try {
+    const res = await getArticlesApi();
+    allArticles.value = res.data || [];
+  } catch {
+    allArticles.value = [];
   }
 }
 
@@ -76,9 +92,12 @@ async function toPage(offset) {
   await loadMyArticles();
 }
 
+function goDetail(id) {
+  router.push(`/articles/${id}`);
+}
+
 onMounted(async () => {
-  await loadProfile();
-  await loadMyArticles();
+  await Promise.all([loadProfile(), loadMyArticles(), loadAllArticles()]);
 });
 </script>
 
@@ -112,10 +131,14 @@ onMounted(async () => {
 
     <div class="panel">
       <h2>我点赞的文章</h2>
-      <div v-if="authStore.profile?.articlesLike?.length" class="list-grid">
-        <div v-for="a in authStore.profile.articlesLike" :key="`like-${a.id}`" class="line-card">
-          <strong>{{ a.title }}</strong>
-          <span>{{ formatDate(a.createdAt) }}</span>
+      <div v-if="likedArticlesRich.length" class="card-grid">
+        <div
+          v-for="a in likedArticlesRich"
+          :key="`like-${a.id}`"
+          class="clickable"
+          @click="goDetail(a.id)"
+        >
+          <ArticleCard :article="a" />
         </div>
       </div>
       <p v-else class="hint">还没有点赞过文章</p>

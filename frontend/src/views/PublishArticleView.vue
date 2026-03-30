@@ -1,41 +1,80 @@
 <script setup>
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { publishArticleApi, uploadArticleCoverApi } from "../api/articles";
-import { getCategoriesApi } from "../api/taxonomy";
+import { getCategoriesApi, getTagsApi } from "../api/taxonomy";
 
 const router = useRouter();
 const loading = ref(false);
+const uploadingCover = ref(false);
 const message = ref("");
 const categories = ref([]);
+const tags = ref([]);
+const coverFileName = ref("未选择文件");
+const showAllTags = ref(false);
+const defaultVisibleCount = 8;
+const tagKeyword = ref("");
 
 const form = reactive({
   title: "",
   summary: "",
   content: "",
   categoryId: "",
-  tagInput: "",
+  selectedTagNames: [],
   coverUrl: ""
 });
 
-async function loadCategories() {
+const isBusy = computed(() => loading.value || uploadingCover.value);
+const visibleTags = computed(() => {
+  const keyword = tagKeyword.value.trim().toLowerCase();
+  const all = (tags.value || []).filter((t) =>
+    keyword ? t.name.toLowerCase().includes(keyword) : true
+  );
+  const selected = form.selectedTagNames || [];
+  const selectedSet = new Set(selected);
+  const selectedTags = all.filter((t) => selectedSet.has(t.name));
+  const unselectedTags = all.filter((t) => !selectedSet.has(t.name));
+  const ordered = [...selectedTags, ...unselectedTags];
+  if (showAllTags.value) return ordered;
+  return ordered.slice(0, defaultVisibleCount);
+});
+
+function toggleTag(name) {
+  if (form.selectedTagNames.includes(name)) {
+    form.selectedTagNames = form.selectedTagNames.filter((i) => i !== name);
+  } else {
+    form.selectedTagNames = [...form.selectedTagNames, name];
+  }
+}
+
+async function loadMeta() {
   try {
-    const res = await getCategoriesApi();
-    categories.value = res.data || [];
+    const [cateRes, tagRes] = await Promise.all([
+      getCategoriesApi(),
+      getTagsApi().catch(() => ({ data: [] }))
+    ]);
+    categories.value = cateRes.data || [];
+    tags.value = tagRes.data || [];
   } catch {
     categories.value = [];
+    tags.value = [];
   }
 }
 
 async function uploadCover(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  coverFileName.value = file.name;
+  uploadingCover.value = true;
+  message.value = "";
   try {
     const res = await uploadArticleCoverApi(file);
     form.coverUrl = res.data;
     message.value = "封面上传成功";
   } catch (err) {
     message.value = err?.payload?.message || err.message || "封面上传失败";
+  } finally {
+    uploadingCover.value = false;
   }
 }
 
@@ -48,15 +87,12 @@ async function submit() {
       summary: form.summary,
       content: form.content,
       categoryId: Number(form.categoryId),
-      tagNames: form.tagInput
-        .split(",")
-        .map((i) => i.trim())
-        .filter(Boolean),
+      tagNames: form.selectedTagNames,
       coverUrl: form.coverUrl
     };
     await publishArticleApi(payload);
     message.value = "发布成功";
-    setTimeout(() => router.push("/my-articles"), 700);
+    setTimeout(() => router.push("/profile"), 700);
   } catch (err) {
     message.value = err?.payload?.message || err.message || "发布失败";
   } finally {
@@ -64,11 +100,11 @@ async function submit() {
   }
 }
 
-onMounted(loadCategories);
+onMounted(loadMeta);
 </script>
 
 <template>
-  <section class="panel">
+  <section class="panel publish-page">
     <h2>发布文章</h2>
     <p v-if="message" :class="message.includes('成功') ? 'ok' : 'error'">{{ message }}</p>
 
@@ -92,16 +128,56 @@ onMounted(loadCategories);
           <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </label>
+
       <label>
-        标签（英文逗号分隔）
-        <input v-model="form.tagInput" placeholder="Vue, CSharp, 生活随笔" />
+        选择标签
+        <input v-model.trim="tagKeyword" placeholder="搜索标签..." />
+        <div class="tag-chip-grid">
+          <button
+            v-for="tag in visibleTags"
+            :key="tag.id"
+            type="button"
+            class="tag-chip"
+            :class="{ active: form.selectedTagNames.includes(tag.name) }"
+            @click="toggleTag(tag.name)"
+          >
+            #{{ tag.name }}
+          </button>
+        </div>
+        <div class="tag-tools" v-if="visibleTags.length > defaultVisibleCount || tags.length > defaultVisibleCount">
+          <button class="btn ghost mini" type="button" @click="showAllTags = !showAllTags">
+            {{ showAllTags ? "收起标签" : "展开更多标签" }}
+          </button>
+        </div>
+        <div class="selected-tags" v-if="form.selectedTagNames.length">
+          <span class="hint">已选：</span>
+          <span class="tag selected" v-for="name in form.selectedTagNames" :key="name">#{{ name }}</span>
+          <button class="btn ghost mini" type="button" @click="form.selectedTagNames = []">
+            清空
+          </button>
+        </div>
       </label>
+
       <label>
         封面上传
-        <input type="file" accept="image/*" @change="uploadCover" />
+        <div class="file-row">
+          <label class="btn ghost file-btn">
+            选择图片
+            <input type="file" accept="image/*" hidden @change="uploadCover" />
+          </label>
+          <span class="hint">{{ coverFileName }}</span>
+        </div>
       </label>
+
       <input v-model="form.coverUrl" placeholder="封面 URL（上传后自动填充）" required />
-      <button class="btn solid" :disabled="loading">{{ loading ? "发布中..." : "发布" }}</button>
+      <button class="btn solid" :disabled="isBusy">{{ loading ? "发布中..." : "发布" }}</button>
     </form>
+
+    <div v-if="uploadingCover" class="loading-mask">
+      <div class="loader-card">
+        <div class="loader"></div>
+        <p>封面上传中...</p>
+      </div>
+    </div>
   </section>
 </template>

@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
 import HomeView from "../views/HomeView.vue";
+import ArticlesView from "../views/ArticlesView.vue";
 import LoginView from "../views/LoginView.vue";
 import RegisterView from "../views/RegisterView.vue";
 import ArticleDetailView from "../views/ArticleDetailView.vue";
 import ProfileView from "../views/ProfileView.vue";
-import MyArticlesView from "../views/MyArticlesView.vue";
 import PublishArticleView from "../views/PublishArticleView.vue";
 import EditArticleView from "../views/EditArticleView.vue";
 import AdminDashboardView from "../views/AdminDashboardView.vue";
@@ -15,6 +15,7 @@ const routes = [
   { path: "/login", name: "login", component: LoginView, meta: { guestOnly: true } },
   { path: "/register", name: "register", component: RegisterView, meta: { guestOnly: true } },
   { path: "/", name: "home", component: HomeView, meta: { requiresAuth: true } },
+  { path: "/articles", name: "articles", component: ArticlesView, meta: { requiresAuth: true } },
   {
     path: "/articles/:id",
     name: "article-detail",
@@ -22,12 +23,6 @@ const routes = [
     meta: { requiresAuth: true }
   },
   { path: "/profile", name: "profile", component: ProfileView, meta: { requiresAuth: true } },
-  {
-    path: "/my-articles",
-    name: "my-articles",
-    component: MyArticlesView,
-    meta: { requiresAuth: true }
-  },
   {
     path: "/publish",
     name: "publish",

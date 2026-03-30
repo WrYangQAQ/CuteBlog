@@ -50,7 +50,7 @@ a {
   padding: 12px 22px;
   border-bottom: 1px solid rgba(255, 195, 203, 0.6);
   backdrop-filter: blur(8px);
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.66);
 }
 
 .brand {
@@ -82,6 +82,7 @@ a {
   display: flex;
   gap: 14px;
   align-items: center;
+  margin-left: -80px;
 }
 
 .nav-links a {
@@ -171,6 +172,12 @@ a {
   background: linear-gradient(135deg, #e46989, #d14668);
 }
 
+.btn.mini {
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 0.8rem;
+}
+
 .auth-panel {
   max-width: 560px;
   margin: 10vh auto 0;
@@ -206,16 +213,6 @@ textarea {
 
 textarea.large {
   min-height: 280px;
-}
-
-.search-grid {
-  display: grid;
-  gap: 8px;
-}
-
-.action-row {
-  display: flex;
-  gap: 8px;
 }
 
 .card-grid {
@@ -260,10 +257,16 @@ textarea.large {
   line-height: 1.5;
 }
 
+.summary-prefix {
+  color: #8c6282;
+  font-weight: 700;
+  margin-right: 2px;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -315,6 +318,24 @@ textarea.large {
   justify-content: space-between;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.thumb-btn {
+  margin-top: 10px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #d7d7d7;
+  border-radius: 12px;
+  background: #f4f4f4;
+  color: #8f8f8f;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.thumb-btn.liked {
+  background: #ffe5f0;
+  border-color: #ff9ebf;
+  color: #ff4f93;
 }
 
 .profile-top {
@@ -430,6 +451,169 @@ textarea.large {
   box-shadow: 0 6px 18px rgba(255, 137, 167, 0.26);
 }
 
+.hero-panel {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1.4fr 1fr;
+  align-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 159, 186, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(255, 197, 115, 0.2), transparent 40%),
+    var(--card);
+}
+
+.hero-left h2 {
+  margin-top: 4px;
+}
+
+.kicker {
+  margin: 0;
+  color: var(--brand);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.hero-text {
+  margin: 0 0 12px;
+  color: #5f5573;
+  line-height: 1.6;
+}
+
+.hero-right {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.hero-right img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 2px solid #ffe2ee;
+  background: #fff;
+  animation: floaty 2.8s ease-in-out infinite;
+}
+
+.hero-right img:nth-child(2) {
+  animation-delay: 0.35s;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.compact-search-panel {
+  padding: 12px;
+}
+
+.compact-search-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.tag-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  border: 1px solid #f0bfd1;
+  background: #fff;
+  color: #8c6282;
+  border-radius: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tag-chip.active {
+  color: #fff;
+  border-color: #ff7fa0;
+  background: linear-gradient(135deg, #ff7fa0, #ffae72);
+}
+
+.tag-tools {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.selected-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed #f0bfd1;
+  border-radius: 10px;
+  background: #fff8fc;
+}
+
+.tag.selected {
+  background: #ffe6f0;
+  border-color: #ffb4d0;
+  color: #cc4d83;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.publish-page {
+  position: relative;
+}
+
+.loading-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: rgba(20, 16, 25, 0.32);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+}
+
+.loader-card {
+  width: 220px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.17);
+}
+
+.loader {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 4px solid #ffd5e5;
+  border-top-color: #ff7fa0;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 900px) {
   .cute-header {
     flex-wrap: wrap;
@@ -440,6 +624,10 @@ textarea.large {
   }
 
   .inline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-panel {
     grid-template-columns: 1fr;
   }
 }

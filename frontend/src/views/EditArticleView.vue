@@ -64,7 +64,7 @@ async function submit() {
       tagIds: form.tagIds.map(Number)
     });
     message.value = "更新成功";
-    setTimeout(() => router.push("/my-articles"), 700);
+    setTimeout(() => router.push("/profile"), 700);
   } catch (err) {
     message.value = err?.payload?.message || err.message || "更新失败";
   } finally {

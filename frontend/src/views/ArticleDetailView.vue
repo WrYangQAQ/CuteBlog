@@ -2,12 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { marked } from "marked";
-import {
-  getArticleByIdApi,
-  readArticleApi,
-  toggleArticleLikeApi
-} from "../api/articles";
+import { getArticleByIdApi, readArticleApi, toggleArticleLikeApi } from "../api/articles";
 import { getCommentsApi, publishCommentApi } from "../api/comments";
+import { getProfileApi } from "../api/auth";
 import { formatDate } from "../utils/asset";
 
 const route = useRoute();
@@ -19,6 +16,7 @@ const article = ref(null);
 const comments = ref([]);
 const newComment = ref("");
 const enterTime = ref(Date.now());
+const liked = ref(false);
 
 const htmlContent = computed(() => marked.parse(article.value?.content || ""));
 
@@ -26,12 +24,16 @@ async function loadDetail() {
   loading.value = true;
   message.value = "";
   try {
-    const [articleRes, commentsRes] = await Promise.all([
+    const [articleRes, commentsRes, profileRes] = await Promise.all([
       getArticleByIdApi(articleId.value),
-      getCommentsApi(articleId.value).catch(() => ({ data: [] }))
+      getCommentsApi(articleId.value).catch(() => ({ data: [] })),
+      getProfileApi().catch(() => ({ data: null }))
     ]);
     article.value = articleRes.data;
     comments.value = commentsRes.data || [];
+    liked.value = Boolean(
+      profileRes?.data?.articlesLike?.some((item) => Number(item.id) === articleId.value)
+    );
   } catch (err) {
     message.value = err?.payload?.message || err.message || "加载文章失败";
   } finally {
@@ -55,11 +57,12 @@ async function publishComment() {
 }
 
 async function likeArticle() {
+  const prev = liked.value;
+  liked.value = !prev;
   try {
     await toggleArticleLikeApi(articleId.value);
-    message.value = "点赞状态已更新";
-  } catch (err) {
-    message.value = err?.payload?.message || err.message || "点赞失败";
+  } catch {
+    liked.value = prev;
   }
 }
 
@@ -70,7 +73,7 @@ async function reportReadDuration() {
   try {
     await readArticleApi(articleId.value, stay);
   } catch {
-    // 忽略阅读上报异常，不影响用户页面体验
+    // ignore read report errors
   }
 }
 
@@ -97,7 +100,10 @@ onBeforeUnmount(reportReadDuration);
       <div class="tags">
         <span v-for="tag in article.tagNames || []" :key="tag" class="tag">#{{ tag }}</span>
       </div>
-      <button class="btn solid" @click="likeArticle">点赞 / 取消点赞</button>
+
+      <button class="thumb-btn" :class="{ liked }" @click="likeArticle" aria-label="like">
+        👍
+      </button>
 
       <article class="markdown-body" v-html="htmlContent"></article>
 

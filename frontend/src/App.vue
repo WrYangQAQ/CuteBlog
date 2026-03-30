@@ -28,8 +28,8 @@ function logout() {
       </div>
       <nav class="nav-links">
         <router-link v-if="isLoggedIn" to="/">首页</router-link>
+        <router-link v-if="isLoggedIn" to="/articles">全部文章</router-link>
         <router-link v-if="isLoggedIn" to="/publish">发布文章</router-link>
-        <router-link v-if="isLoggedIn" to="/my-articles">我的文章</router-link>
         <router-link v-if="isLoggedIn" to="/profile">个人中心</router-link>
         <router-link v-if="isAdmin" to="/admin/dashboard">管理台</router-link>
       </nav>

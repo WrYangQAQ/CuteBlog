@@ -8,6 +8,17 @@ export function toAbsoluteAsset(url) {
 
 export function formatDate(dateText) {
   if (!dateText) return "-";
-  const date = new Date(dateText);
-  return date.toLocaleString("zh-CN", { hour12: false });
+
+  const hasZone = /Z$|[+-]\d{2}:\d{2}$/.test(dateText);
+  const normalized = hasZone ? dateText : `${dateText}Z`; // 当作 UTC
+  const date = new Date(normalized);
+  const local = new Date(
+    date.toLocaleString("en-US", {
+      timeZone: "Asia/Shanghai"
+    })
+  );
+  const year = local.getFullYear();
+  const month = local.getMonth() + 1;
+  const day = local.getDate();
+  return `${year}年${month}月${day}日`;
 }

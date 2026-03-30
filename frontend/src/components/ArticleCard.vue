@@ -17,7 +17,7 @@ const cover = computed(() => toAbsoluteAsset(props.article.coverUrl));
     <img class="cover" :src="cover" alt="cover" />
     <div class="content">
       <h3>{{ article.title }}</h3>
-      <p class="summary">{{ article.summary }}</p>
+      <p class="summary"><span class="summary-prefix">摘要：</span>{{ article.summary }}</p>
       <div class="meta">
         <span>{{ article.categoryName }}</span>
         <span>👀 {{ article.viewCount }}</span>
