@@ -2,7 +2,7 @@
 {
     public class PagedResult<T>
     {
-        public required T Items;
+        public required T Items { get; set; }
         public required int TotalCount { get; set; }
 
         public PagedResult() { }

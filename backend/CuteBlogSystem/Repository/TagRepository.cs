@@ -67,11 +67,10 @@ namespace CuteBlogSystem.Repository
         }
 
         // 修改标签
-        public async Task<bool> UpdateTagAsync(Tag updatedTag)
+        public async Task<bool> UpdateTagAsync(Tag updatedTag, int tagId)
         {
             try
             {
-                int tagId = updatedTag.Id;
                 var tag = await _dbContext.Tags.FindAsync(tagId);
                 if (tag == null)
                 {

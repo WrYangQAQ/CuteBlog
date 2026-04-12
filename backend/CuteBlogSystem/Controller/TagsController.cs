@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using CuteBlogSystem.DTO;
 using CuteBlogSystem.Entity;
-using CuteBlogSystem.DTO;
 using CuteBlogSystem.Service;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CuteBlogSystem.Controller
 {
@@ -30,6 +31,7 @@ namespace CuteBlogSystem.Controller
             }
         }
 
+        [Authorize(Roles = "Admin")]
         [HttpPost]
         public async Task<IActionResult> CreateTag([FromBody] Tag tag)
         {
@@ -44,10 +46,11 @@ namespace CuteBlogSystem.Controller
             }
         }
 
+        [Authorize(Roles = "Admin")]
         [HttpPut("{tagId}")]
-        public async Task<IActionResult> UpdateTag([FromBody] Tag updatedTag)
+        public async Task<IActionResult> UpdateTag([FromBody] Tag updatedTag, [FromRoute] int tagId)
         {
-            ApiResponse response = await _tagService.UpdateTagAsync(updatedTag);
+            ApiResponse response = await _tagService.UpdateTagAsync(updatedTag, tagId);
             if (response.Success)
             {
                 return Ok(response);

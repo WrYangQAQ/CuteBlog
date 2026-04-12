@@ -71,29 +71,17 @@ namespace CuteBlogSystem.Service
         {
             try
             {
-                // 调用仓储层获取文章列表
-                List<Article> articles = await _articleRepository.GetArticlesAsync();
+                // 调用仓储层，根据 SearchArticleDTO 查询文章列表
+                List<Article> articles = await _articleRepository.SearchArticlesAsync(searchArticleDTO.Keyword, 
+                                                                                      searchArticleDTO.ArticleTag,
+                                                                                      searchArticleDTO.Category);
                 List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
+
                 // 将文章列表转换为 DTO
                 for (int i = 0; i < articles.Count; i++)
                 {
                     GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
                     articleListDTOs.Add(articleListDTO);
-                }
-                // 根据搜索条件进行过滤
-                if (!string.IsNullOrEmpty(searchArticleDTO.Keyword))  // 如果搜索关键词不为空，则进行模糊搜索
-                {
-                    articleListDTOs = articleListDTOs.Where(a => a.Title.Contains(searchArticleDTO.Keyword)).ToList();
-                }
-
-                if (!string.IsNullOrEmpty(searchArticleDTO.Category)) // 如果搜索分类不为空，则进行模糊搜索
-                {
-                    articleListDTOs = articleListDTOs.Where(a => a.CategoryName.Contains(searchArticleDTO.Category)).ToList();
-                }
-
-                if (searchArticleDTO.ArticleTag != null && searchArticleDTO.ArticleTag.Count > 0)
-                { // 如果搜索标签不为空，则进行模糊搜索
-                    articleListDTOs = articleListDTOs.Where(a => a.TagNames.Any(t => searchArticleDTO.ArticleTag.Contains(t))).ToList();
                 }
 
                 // 返回成功响应
@@ -103,7 +91,6 @@ namespace CuteBlogSystem.Service
             {
                 // 记录异常日志
                 _logger.LogError(ex, $"搜索文章失败！\nex.message:{ex.Message}");
-
                 // 返回失败响应
                 return new ApiResponse(false, $"搜索文章失败！");
             }

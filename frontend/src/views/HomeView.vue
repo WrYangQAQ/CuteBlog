@@ -42,12 +42,12 @@ onMounted(loadHomeData);
 
 <template>
   <section class="stack">
-    <div class="panel hero-panel">
+    <div class="panel hero-panel panel-soft">
       <div class="hero-left">
         <p class="kicker">WELCOME</p>
         <h2>欢迎来到 CuteBlog 的萌系空间</h2>
         <p class="hero-text">
-          今天也来记录点可爱的日常吧。点击上方“全部文章”探索内容，或者直接看看本周置顶与推荐。
+          今天也来记录点可爱的日常吧。点击上方“全部文章”探索内容，或者先看看置顶与推荐。
         </p>
         <button class="btn solid" @click="$router.push('/articles')">进入全部文章</button>
       </div>
@@ -56,27 +56,30 @@ onMounted(loadHomeData);
       </div>
     </div>
 
-    <div class="panel">
-      <h2>置顶文章</h2>
-      <p v-if="loading" class="hint">加载中...</p>
-      <p v-if="message" class="error">{{ message }}</p>
-      <div class="card-grid">
-        <div v-for="a in topped" :key="`top-${a.id}`" class="clickable" @click="goDetail(a.id)">
-          <ArticleCard :article="a" />
+    <p v-if="loading" class="hint">加载中...</p>
+    <p v-if="message" class="error">{{ message }}</p>
+
+    <div class="home-feature-grid">
+      <div class="panel panel-dashed">
+        <h2>置顶文章</h2>
+        <div class="card-grid">
+          <div v-for="a in topped" :key="`top-${a.id}`" class="clickable" @click="goDetail(a.id)">
+            <ArticleCard :article="a" />
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="panel">
-      <h2>推荐文章</h2>
-      <div class="card-grid">
-        <div
-          v-for="a in recommended"
-          :key="`recommend-${a.id}`"
-          class="clickable"
-          @click="goDetail(a.id)"
-        >
-          <ArticleCard :article="a" />
+      <div class="panel panel-cut">
+        <h2>推荐文章</h2>
+        <div class="card-grid">
+          <div
+            v-for="a in recommended"
+            :key="`recommend-${a.id}`"
+            class="clickable"
+            @click="goDetail(a.id)"
+          >
+            <ArticleCard :article="a" />
+          </div>
         </div>
       </div>
     </div>

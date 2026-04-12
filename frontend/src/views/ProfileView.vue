@@ -12,10 +12,11 @@ const authStore = useAuthStore();
 const loading = ref(false);
 const message = ref("");
 const myPage = ref(1);
-const myPageSize = 5;
+const myPageSize = 6;
 const myArticles = ref([]);
 const totalCount = ref(0);
 const allArticles = ref([]);
+const isEditingProfile = ref(false);
 
 const profileForm = reactive({
   nickName: "",
@@ -28,13 +29,17 @@ const likedArticlesRich = computed(() => {
   return liked.map((item) => map.get(Number(item.id)) || item);
 });
 
+function fillFormFromProfile() {
+  profileForm.nickName = authStore.profile?.nickName || "";
+  profileForm.bio = authStore.profile?.bio || "";
+}
+
 async function loadProfile() {
   loading.value = true;
   message.value = "";
   try {
-    const profile = await authStore.fetchProfile();
-    profileForm.nickName = profile?.nickName || "";
-    profileForm.bio = profile?.bio || "";
+    await authStore.fetchProfile();
+    fillFormFromProfile();
   } catch (err) {
     message.value = err?.payload?.message || err.message || "获取资料失败";
   } finally {
@@ -62,10 +67,21 @@ async function loadMyArticles() {
   }
 }
 
+function startEditProfile() {
+  fillFormFromProfile();
+  isEditingProfile.value = true;
+}
+
+function cancelEditProfile() {
+  fillFormFromProfile();
+  isEditingProfile.value = false;
+}
+
 async function saveProfile() {
   try {
     await updateProfileApi(profileForm);
     message.value = "资料更新成功";
+    isEditingProfile.value = false;
     await loadProfile();
   } catch (err) {
     message.value = err?.payload?.message || err.message || "更新失败";
@@ -103,7 +119,7 @@ onMounted(async () => {
 
 <template>
   <section class="stack">
-    <div class="panel">
+    <div class="panel panel-soft">
       <h2>个人资料</h2>
       <p v-if="loading" class="hint">加载中...</p>
       <p v-if="message" :class="message.includes('成功') ? 'ok' : 'error'">{{ message }}</p>
@@ -116,7 +132,13 @@ onMounted(async () => {
         </label>
       </div>
 
-      <form class="form-grid" @submit.prevent="saveProfile">
+      <div v-if="!isEditingProfile" class="profile-display">
+        <p><strong>昵称：</strong>{{ authStore.profile?.nickName || "未设置" }}</p>
+        <p><strong>简介：</strong>{{ authStore.profile?.bio || "这个人很神秘，什么都没写。" }}</p>
+        <button class="btn solid" @click="startEditProfile">修改个人资料</button>
+      </div>
+
+      <form v-else class="form-grid" @submit.prevent="saveProfile">
         <label>
           昵称
           <input v-model.trim="profileForm.nickName" maxlength="20" />
@@ -125,11 +147,14 @@ onMounted(async () => {
           简介
           <textarea v-model="profileForm.bio" maxlength="200" />
         </label>
-        <button class="btn solid">保存资料</button>
+        <div class="action-row">
+          <button class="btn solid">保存资料</button>
+          <button class="btn ghost" type="button" @click="cancelEditProfile">取消</button>
+        </div>
       </form>
     </div>
 
-    <div class="panel">
+    <div class="panel panel-dashed">
       <h2>我点赞的文章</h2>
       <div v-if="likedArticlesRich.length" class="card-grid">
         <div
@@ -144,12 +169,16 @@ onMounted(async () => {
       <p v-else class="hint">还没有点赞过文章</p>
     </div>
 
-    <div class="panel">
+    <div class="panel panel-cut">
       <h2>我发布的文章</h2>
-      <div v-if="myArticles.length" class="list-grid">
-        <div v-for="a in myArticles" :key="`mine-${a.id}`" class="line-card">
-          <strong>{{ a.title }}</strong>
-          <span>{{ formatDate(a.createdAt) }}</span>
+      <div v-if="myArticles.length" class="card-grid">
+        <div
+          v-for="a in myArticles"
+          :key="`mine-${a.id}`"
+          class="clickable"
+          @click="goDetail(a.id)"
+        >
+          <ArticleCard :article="a" />
         </div>
       </div>
       <p v-else class="hint">暂无文章</p>

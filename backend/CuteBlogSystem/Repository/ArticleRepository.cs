@@ -102,5 +102,31 @@ namespace CuteBlogSystem.Repository
         {
             return await _dbContext.Articles.AnyAsync(a => a.Id == articleId);
         }
+
+        // 根据 SerachArticleDTO 查询文章列表
+        public async Task<List<Article>> SearchArticlesAsync(string? keyword, List<string>? articleTags, string? category)
+        {
+            var query = _dbContext.Articles
+                .Include(a => a.Category)
+                .Include(a => a.User)
+                .Include(a => a.ArticleTags)
+                    .ThenInclude(at => at.Tag)
+                .AsQueryable();
+
+            // 根据关键词、标签和分类进行过滤
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                query = query.Where(a => a.Title.Contains(keyword) || a.Content.Contains(keyword));
+            }
+            if (articleTags != null && articleTags.Count > 0)
+            {
+                query = query.Where(a => a.ArticleTags.Any(at => articleTags.Contains(at.Tag.Name)));
+            }
+            if (!string.IsNullOrEmpty(category))
+            {
+                query = query.Where(a => a.Category.Name == category);
+            }
+            return await query.ToListAsync();
+        }
     }
 }

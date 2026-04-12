@@ -1,11 +1,11 @@
-<script setup>
+e<script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { marked } from "marked";
 import { getArticleByIdApi, readArticleApi, toggleArticleLikeApi } from "../api/articles";
 import { getCommentsApi, publishCommentApi } from "../api/comments";
 import { getProfileApi } from "../api/auth";
-import { formatDate } from "../utils/asset";
+import { formatDate, toAbsoluteAsset } from "../utils/asset";
 
 const route = useRoute();
 const articleId = computed(() => Number(route.params.id));
@@ -108,18 +108,24 @@ onBeforeUnmount(reportReadDuration);
       <article class="markdown-body" v-html="htmlContent"></article>
 
       <section class="comment-section">
-        <h3>评论区</h3>
+        <h3>评论区（{{ comments.length }}）</h3>
         <div class="comment-form">
           <textarea v-model="newComment" maxlength="500" placeholder="写点什么吧..." />
           <button class="btn solid" @click="publishComment">发表评论</button>
         </div>
         <div class="comment-list">
+          <p v-if="!comments.length" class="hint">还没有评论，来抢沙发吧。</p>
           <div v-for="(c, idx) in comments" :key="`${idx}-${c.createdAt}`" class="comment-item">
-            <div class="comment-head">
-              <strong>{{ c.userName }}</strong>
-              <span>{{ formatDate(c.createdAt) }}</span>
+            <div class="comment-main">
+              <img class="comment-avatar" :src="toAbsoluteAsset(c.avatarUrl)" alt="avatar" />
+              <div class="comment-body">
+                <div class="comment-head">
+                  <strong>{{ c.userName }}</strong>
+                  <span>{{ formatDate(c.createdAt) }}</span>
+                </div>
+                <p>{{ c.content }}</p>
+              </div>
             </div>
-            <p>{{ c.content }}</p>
           </div>
         </div>
       </section>

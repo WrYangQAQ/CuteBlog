@@ -207,24 +207,32 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> UploadAdminImage([FromForm] UploadImageRequest request)
         {
             bool success = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out int userIdInt);
-            var response = await _userService.UploadWebsiteImageAsync(userIdInt, request.Image);
-            if (response.Success)
+            if (success)
             {
-                return Ok(response);
-            }
-            else
-            {
-                if (response.Code == ResponseCode.FileMissing
-                    || response.Code == ResponseCode.FileTooLarge
-                    || response.Code == ResponseCode.InvalidFileType
-                    || response.Code == ResponseCode.InvalidFileContent)
+                var response = await _userService.UploadWebsiteImageAsync(userIdInt, request.Image);
+                if (response.Success)
                 {
-                    return BadRequest(response);
+                    return Ok(response);
                 }
                 else
                 {
-                    return NotFound(response);
+                    if (response.Code == ResponseCode.FileMissing
+                        || response.Code == ResponseCode.FileTooLarge
+                        || response.Code == ResponseCode.InvalidFileType
+                        || response.Code == ResponseCode.InvalidFileContent)
+                    {
+                        return BadRequest(response);
+                    }
+                    else
+                    {
+                        return NotFound(response);
+                    }
                 }
+            }
+            else
+            {
+                _logger.LogWarning("用户ID无效，无法上传图片。");
+                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
             }
         }
     }

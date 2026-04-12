@@ -78,11 +78,15 @@ namespace CuteBlogSystem.Service
         }
 
         // 根据ID更新标签
-        public async Task<ApiResponse> UpdateTagAsync(Tag updatedTag)
+        public async Task<ApiResponse> UpdateTagAsync(Tag updatedTag, int tagId)
         {
             try
             {
-                bool success = await _tagRepository.UpdateTagAsync(updatedTag);
+                if(updatedTag.Id != tagId)
+                {
+                    return new ApiResponse(false, "标签ID不匹配！");
+                }
+                bool success = await _tagRepository.UpdateTagAsync(updatedTag, tagId);
                 if (success)
                 {
                     return new ApiResponse(true, "标签更新成功！", updatedTag);

@@ -26,7 +26,7 @@ namespace CuteBlogSystem.Controller
             bool success = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out int userId);
             if (success)
             {
-                ApiResponse response = await _commentService.PublishCommentAsync(commentDTO, articleId, userId);
+                ApiResponse response = await _commentService.PublishCommentAsync(commentDTO, userId, articleId);
                 if (response.Success)
                 {
                     return Ok(response);

@@ -13,6 +13,20 @@ onMounted(() => {
 const isLoggedIn = computed(() => authStore.isLoggedIn);
 const isAdmin = computed(() => authStore.isAdmin);
 
+const leftPetals = Array.from({ length: 10 }, (_, i) => ({
+  id: `l-${i}`,
+  left: `${5 + (i % 3) * 18}%`,
+  delay: `${(i % 5) * 1.4}s`,
+  duration: `${9 + (i % 4) * 1.7}s`
+}));
+
+const rightPetals = Array.from({ length: 10 }, (_, i) => ({
+  id: `r-${i}`,
+  right: `${4 + (i % 3) * 17}%`,
+  delay: `${0.8 + (i % 5) * 1.3}s`,
+  duration: `${10 + (i % 4) * 1.6}s`
+}));
+
 function logout() {
   authStore.logout();
   router.push("/login");
@@ -21,6 +35,23 @@ function logout() {
 
 <template>
   <div class="app-shell">
+    <div class="sakura-layer left">
+      <span
+        v-for="p in leftPetals"
+        :key="p.id"
+        class="petal"
+        :style="{ left: p.left, animationDelay: p.delay, animationDuration: p.duration }"
+      ></span>
+    </div>
+    <div class="sakura-layer right">
+      <span
+        v-for="p in rightPetals"
+        :key="p.id"
+        class="petal"
+        :style="{ right: p.right, animationDelay: p.delay, animationDuration: p.duration }"
+      ></span>
+    </div>
+
     <header class="cute-header">
       <div class="brand" @click="$router.push('/')">
         <span class="brand-badge">萌</span>
