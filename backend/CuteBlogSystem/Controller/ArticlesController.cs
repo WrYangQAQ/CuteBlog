@@ -1,17 +1,19 @@
-using Microsoft.AspNetCore.Mvc;
-using CuteBlogSystem.Entity;
-using CuteBlogSystem.Enum;
-using Microsoft.AspNetCore.Authorization;
-using CuteBlogSystem.Service;
-using System.Security.Claims;
+﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.DTO;
-using Microsoft.AspNetCore.Http.HttpResults;
+using CuteBlogSystem.Enum;
+using CuteBlogSystem.Service;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+
 
 namespace CuteBlogSystem.Controller
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ArticlesController : ControllerBase
+    public class ArticlesController : BaseController
     {
         private readonly ArticleService _articleService;
         private readonly ILogger<ArticlesController> _logger;
@@ -30,14 +32,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetArticlesList()
         {
             ApiResponse response = await _articleService.GetAllArticlesAsync();
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 模糊搜索
@@ -46,14 +41,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> SearchArticles([FromQuery] SearchArticleDTO searchArticleDTO)
         {
             ApiResponse response = await _articleService.SearchArticlesAsync(searchArticleDTO);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
 
@@ -63,14 +51,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetArticlesContentById([FromRoute] int articleId)
         {
             ApiResponse response = await _articleService.GetArticleContentByIdAsync(articleId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 阅读文章，增加阅读量
@@ -79,14 +60,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> ReadArticle([FromRoute] int articleId, [FromBody] int stayDuration)
         {
             ApiResponse response = await _articleService.IncrementArticleViewCountAsync(articleId, stayDuration);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NoContent();
-            }
+            return ReturnResponse(response);
         }
 
         // 上传文章封面图片
@@ -96,14 +70,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> UploadArticleCover([FromForm] UploadImageRequest request)
         {
             ApiResponse response = await _articleService.UploadArticleCoverAsync(request.Image);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return BadRequest(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 发布文章
@@ -116,18 +83,11 @@ namespace CuteBlogSystem.Controller
             if (success)
             {
                 ApiResponse response = await _articleService.PublishArticleAsync(article, userId);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return BadRequest(response);
-                }
+                return ReturnResponse(response);
             }
             else
             {
-                return Unauthorized(new ApiResponse(false, "用户未认证", ResponseCode.Unauthorized));
+                return ReturnResponse(new ApiResponse(false, "用户未认证", code:ResponseCode.Unauthorized));
             }
         }
 
@@ -140,19 +100,12 @@ namespace CuteBlogSystem.Controller
             if (success)
             {
                 ApiResponse response = await _articleService.ToggleArticleLikeAsync(articleId, userId);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return BadRequest(response);
-                }
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户未认证，无法点赞文章");
-                return Unauthorized(new ApiResponse(false, "用户未认证", ResponseCode.Unauthorized));
+                return ReturnResponse(new ApiResponse(false, "用户未认证", code: ResponseCode.Unauthorized));
             }
         }
 
@@ -166,21 +119,10 @@ namespace CuteBlogSystem.Controller
             if (!success)
             {
                 _logger.LogWarning("用户未认证，无法删除文章");
-                return Unauthorized(new ApiResponse(false, "用户未认证", ResponseCode.Unauthorized));
+                return ReturnResponse(new ApiResponse(false, "用户未认证", code: ResponseCode.Unauthorized));
             }
             ApiResponse response = await _articleService.DeleteArticleAsync(articleId, userId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else if (response.Code == ResponseCode.Unauthorized)
-            {
-                return Unauthorized(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
 
         }
 
@@ -194,21 +136,10 @@ namespace CuteBlogSystem.Controller
             if (!success)
             {
                 _logger.LogWarning("用户未认证，无法编辑文章");
-                return Unauthorized(new ApiResponse(false, "用户未认证", ResponseCode.Unauthorized));
+                return ReturnResponse(new ApiResponse(false, "用户未认证", code: ResponseCode.Unauthorized));
             }
             ApiResponse response = await _articleService.UpdateArticleContentAsync(articleId, updateArticleDTO, userId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else if (response.Code == ResponseCode.Unauthorized)
-            {
-                return Unauthorized(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 置顶文章（或者取消置顶）
@@ -218,14 +149,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> PutArticleOnTopAsync([FromRoute] int articleId)
         {
             ApiResponse response = await _articleService.ToggleArticleTopAsync(articleId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
 
         }
 
@@ -235,14 +159,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetToppedArticlesAsync()
         {
             ApiResponse response = await _articleService.GetTopArticlesAsync();
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 推荐文章（或者取消推荐）
@@ -252,14 +169,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> RecommendArticleAsync([FromRoute] int articleId)
         {
             ApiResponse response = await _articleService.ToggleArticleRecommendAsync(articleId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         // 获取推荐文章
@@ -268,14 +178,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetRecommendedArticlesAsync()
         {
             ApiResponse response = await _articleService.GetRecommendArticlesAsync();
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
     }
 }

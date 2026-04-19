@@ -1,4 +1,5 @@
-﻿using CuteBlogSystem.DTO;
+﻿using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Service;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,7 @@ namespace CuteBlogSystem.Controller
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class CategoriesController : ControllerBase
+    public class CategoriesController : BaseController
     {
         private readonly CategoryService _categoryService;
         public CategoriesController(CategoryService categoryService)
@@ -22,14 +23,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetAllCategories()
         {
             ApiResponse response = await _categoryService.GetAllCategoriesAsync();
-            if(response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
 
         [Authorize(Roles = "Admin")]
@@ -37,14 +31,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> CreateCategory([FromBody] Category category)
         {
             ApiResponse response = await _categoryService.AddCategoryAsync(category);
-            if(response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return BadRequest(response);
-            }
+            return ReturnResponse(response);
         }
 
         [Authorize(Roles = "Admin")]
@@ -52,14 +39,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> UpdateCategory([FromRoute] int categoryId, [FromBody] Category updateCategory)
         {
             ApiResponse response = await _categoryService.UpdateCategoryAsync(categoryId, updateCategory);
-            if(response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return BadRequest(response);
-            }
+            return ReturnResponse(response);
         }
 
         [Authorize(Roles = "Admin")]
@@ -67,14 +47,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> DeleteCategory([FromRoute] int categoryId)
         {
             ApiResponse response = await _categoryService.DeleteCategoryAsync(categoryId);
-            if(response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return BadRequest(response);
-            }
+            return ReturnResponse(response);
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using CuteBlogSystem.Config;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CuteBlogSystem.Controller
@@ -8,7 +9,7 @@ namespace CuteBlogSystem.Controller
     /// </summary>
     [Route("api/[controller]")]
     [ApiController]
-    public class SwaggerController : ControllerBase
+    public class SwaggerController : BaseController
     {
         
     }

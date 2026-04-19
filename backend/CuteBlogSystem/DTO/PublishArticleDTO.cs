@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+ï»¿using System.ComponentModel.DataAnnotations;
 
 namespace CuteBlogSystem.DTO
 {
@@ -10,7 +10,7 @@ namespace CuteBlogSystem.DTO
         public int CategoryId { get; set; }
         public List<string> TagNames { get; set; } = new List<string>();
 
-        [Required(ErrorMessage = "·âÃæÍ¼Æ¬URL²»ÄÜÎª¿Õ")]
+        [Required(ErrorMessage = "å°é¢å›¾ç‰‡URLä¸èƒ½ä¸ºç©º")]
         public string CoverUrl { get; set; }
         public PublishArticleDTO() { }
 

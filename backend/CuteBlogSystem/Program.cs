@@ -1,4 +1,4 @@
-using CuteBlogSystem.Config;
+﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.Repository;
 using CuteBlogSystem.Service;
 using Microsoft.EntityFrameworkCore;
@@ -104,6 +104,11 @@ app.MapGet("/", context =>
     context.Response.Redirect("/app/index.html");
     return Task.CompletedTask;
 });
+
+
+// 对于未经处理的异常，将其重定向到 /error 端点
+app.UseExceptionHandler("/error");
+
 
 app.MapControllers();
 app.UseSwagger();

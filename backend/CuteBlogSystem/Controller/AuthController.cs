@@ -1,4 +1,5 @@
-﻿using CuteBlogSystem.DTO;
+﻿using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Service;
@@ -12,7 +13,7 @@ namespace CuteBlogSystem.Controller
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController : ControllerBase
+    public class AuthController : BaseController
     {
         private readonly UserService _userService;
         private readonly AdminStatisticsService _adminStatisticsService;
@@ -33,14 +34,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> Register([FromBody] RegisterDTO registerDTO)
         {
             ApiResponse response = await _userService.RegisterUserAsync(registerDTO);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return BadRequest(response);
-            }
+            return ReturnResponse(response);
         }
 
         // POST: api/auth/login
@@ -49,14 +43,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> Login([FromBody] LoginDTO loginDTO)
         {
             ApiResponse response = await _userService.LoginUserAsync(loginDTO);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return Unauthorized(response);
-            }
+            return ReturnResponse(response);
         }
 
         // GET: api/auth/profile
@@ -69,20 +56,13 @@ namespace CuteBlogSystem.Controller
             bool success = int.TryParse(userId, out int userIdInt);
             if (success)
             {
-                var response = await _userService.GetUserInfoAsync(userIdInt);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return NotFound(response);
-                }
+                ApiResponse response = await _userService.GetUserInfoAsync(userIdInt);
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户ID无效，无法获取用户信息。");
-                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
+                return ReturnResponse(new ApiResponse(false, "用户ID无效！", code:ResponseCode.Unauthorized));
             }
         }
 
@@ -97,19 +77,12 @@ namespace CuteBlogSystem.Controller
             if (success)
             {
                 var response = await _userService.UpdateUserInfoAsync(userIdInt, userInformationDTO);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return BadRequest(response);
-                }
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户ID无效，无法更新用户信息。");
-                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
+                return ReturnResponse(new ApiResponse(false, "用户ID无效！", code: ResponseCode.Unauthorized));
             }
         }
 
@@ -124,36 +97,13 @@ namespace CuteBlogSystem.Controller
             bool success = int.TryParse(userId, out int userIdInt);
             if (success)
             {
-                var response = await _userService.UploadAvatarAsync(userIdInt, request.Image);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    if (response.Code == ResponseCode.FileMissing
-                        || response.Code == ResponseCode.FileTooLarge
-                        || response.Code == ResponseCode.InvalidFileType
-                        || response.Code == ResponseCode.InvalidFileContent)
-                    {
-                        return BadRequest(response);
-                    }
-                    else if (response.Code == ResponseCode.UserNotFound)
-                    {
-                        return NotFound(response);
-                    }
-                    else
-                    {
-                        return Unauthorized(response);
-                    }
-
-
-                }
+                ApiResponse response = await _userService.UploadAvatarAsync(userIdInt, request.Image);
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户ID无效，无法上传头像。");
-                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
+                return ReturnResponse(new ApiResponse(false, "用户ID无效！", code: ResponseCode.Unauthorized));
             }
 
         }
@@ -167,20 +117,13 @@ namespace CuteBlogSystem.Controller
             bool success = int.TryParse(userId, out int userIdInt);
             if (success)
             {
-                var response = await _userService.GetMyArticlesAsync(userIdInt, page, pageSize);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return NotFound(response);
-                }
+                ApiResponse response = await _userService.GetMyArticlesAsync(userIdInt, page, pageSize);
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户ID无效，无法获取用户文章列表。");
-                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
+                return ReturnResponse(new ApiResponse(false, "用户ID无效！", code: ResponseCode.Unauthorized));
             }
         }
 
@@ -189,15 +132,8 @@ namespace CuteBlogSystem.Controller
         [HttpGet("admin/dashboard")]
         public async Task<IActionResult> GetAdminDashboard()
         {
-            var response = await _adminStatisticsService.GetStatisticsAsync();
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            ApiResponse response = await _adminStatisticsService.GetStatisticsAsync();
+            return ReturnResponse(response);
         }
 
         // 管理员上传图片以帮助网页内容展示
@@ -209,30 +145,13 @@ namespace CuteBlogSystem.Controller
             bool success = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out int userIdInt);
             if (success)
             {
-                var response = await _userService.UploadWebsiteImageAsync(userIdInt, request.Image);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    if (response.Code == ResponseCode.FileMissing
-                        || response.Code == ResponseCode.FileTooLarge
-                        || response.Code == ResponseCode.InvalidFileType
-                        || response.Code == ResponseCode.InvalidFileContent)
-                    {
-                        return BadRequest(response);
-                    }
-                    else
-                    {
-                        return NotFound(response);
-                    }
-                }
+                ApiResponse response = await _userService.UploadWebsiteImageAsync(userIdInt, request.Image);
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("用户ID无效，无法上传图片。");
-                return Unauthorized(new ApiResponse(false, "用户ID无效！"));
+                return ReturnResponse(new ApiResponse(false, "用户ID无效！", code: ResponseCode.Unauthorized));
             }
         }
     }

@@ -1,22 +1,24 @@
-﻿using CuteBlogSystem.DTO;
+﻿using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO;
+using CuteBlogSystem.Enum;
 using CuteBlogSystem.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using CuteBlogSystem.Enum;
 
 namespace CuteBlogSystem.Controller
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class CommentsController : ControllerBase
+    public class CommentsController : BaseController
     {
         private readonly CommentService _commentService;
         private readonly ILogger<CommentsController> _logger;
-        public CommentsController(CommentService commentService)
+        public CommentsController(CommentService commentService, ILogger<CommentsController> logger)
         {
             _commentService = commentService;
+            _logger = logger;
         }
 
         [Authorize]
@@ -27,19 +29,12 @@ namespace CuteBlogSystem.Controller
             if (success)
             {
                 ApiResponse response = await _commentService.PublishCommentAsync(commentDTO, userId, articleId);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else
-                {
-                    return BadRequest(response);
-                }
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("请求头携带JWT已失效，请重新登陆！");
-                return Unauthorized(new ApiResponse(false, "请求头携带JWT已失效，请重新登陆！"));
+                return ReturnResponse(new ApiResponse(false, "请求头携带JWT已失效，请重新登陆！", code:ResponseCode.Unauthorized));
             }
         }
 
@@ -51,27 +46,12 @@ namespace CuteBlogSystem.Controller
             if (success)
             {
                 ApiResponse response = await _commentService.DeleteCommentAsync(commentId, userId);
-                if (response.Success)
-                {
-                    return Ok(response);
-                }
-                else if (response.Code == ResponseCode.Unauthorized)
-                {
-                    return Unauthorized(response);
-                }
-                else if (response.Code == ResponseCode.NotFound)
-                {
-                    return NotFound(response);
-                }
-                else
-                {
-                    return BadRequest(response);
-                }
+                return ReturnResponse(response);
             }
             else
             {
                 _logger.LogWarning("请求头携带JWT已失效，请重新登陆！");
-                return Unauthorized(new ApiResponse(false, "请求头携带JWT已失效，请重新登陆！"));
+                return ReturnResponse(new ApiResponse(false, "请求头携带JWT已失效，请重新登陆！", code: ResponseCode.Unauthorized));
             }
         }
 
@@ -79,14 +59,7 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetCommentsLists([FromQuery] int articleId)
         {
             ApiResponse response = await _commentService.GetCommentsListAsync(articleId);
-            if (response.Success)
-            {
-                return Ok(response);
-            }
-            else
-            {
-                return NotFound(response);
-            }
+            return ReturnResponse(response);
         }
     }
 }
