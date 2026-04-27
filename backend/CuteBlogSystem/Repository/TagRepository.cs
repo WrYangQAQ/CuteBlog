@@ -1,5 +1,6 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.Entity;
+using CuteBlogSystem.DTO;
 using Microsoft.EntityFrameworkCore;
 
 namespace CuteBlogSystem.Repository
@@ -28,11 +29,16 @@ namespace CuteBlogSystem.Repository
         }
 
         // 添加标签
-        public async Task<bool> AddTagAsync(Tag tag)
+        public async Task<bool> AddTagAsync(GetTagDTO tag)
         {
             try
             {
-                _dbContext.Tags.Add(tag);
+                var newTag = new Tag
+                {
+                    Name = tag.Name,
+                    CategoryId = tag.CategoryId
+                };
+                _dbContext.Tags.Add(newTag);
                 await _dbContext.SaveChangesAsync();
                 return true;
             }
@@ -76,8 +82,13 @@ namespace CuteBlogSystem.Repository
                 {
                     return false; // 标签不存在
                 }
+
+                // 更新标签属性
                 tag.Name = updatedTag.Name;
+                tag.CategoryId = updatedTag.CategoryId;
                 _dbContext.Tags.Update(tag);
+
+                // 保存更改
                 await _dbContext.SaveChangesAsync();
                 return true;
             }
@@ -87,6 +98,12 @@ namespace CuteBlogSystem.Repository
                 _logger.LogError($"标签修改失败！\nex.message:{ex.Message}");
                 return false;
             }
+        }
+
+        // 根据分类ID获取标签列表
+        public async Task<List<Tag>> GetTagsByCategoryIdAsync(int categoryId)
+        {
+            return await _dbContext.Tags.Where(t => t.CategoryId == categoryId).ToListAsync();
         }
     }
 }

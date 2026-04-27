@@ -1,7 +1,22 @@
-import http from "./http";
+﻿import http from "./http";
+
+const MESSAGE_BOARD_ARTICLE_ID = Number(import.meta.env.VITE_MESSAGE_BOARD_ARTICLE_ID || 2);
+
+function isMessageBoardArticle(article) {
+  if (!article) return false;
+  return Number(article.id) === MESSAGE_BOARD_ARTICLE_ID;
+}
+
+function filterMessageBoardArticles(list) {
+  if (!Array.isArray(list)) return list;
+  return list.filter((article) => !isMessageBoardArticle(article));
+}
 
 export function getArticlesApi() {
-  return http.get("/api/Articles");
+  return http.get("/api/Articles").then((res) => ({
+    ...res,
+    data: filterMessageBoardArticles(res.data)
+  }));
 }
 
 export function searchArticlesApi(search = {}) {
@@ -13,7 +28,10 @@ export function searchArticlesApi(search = {}) {
       .filter(Boolean)
       .forEach((tag) => params.append("ArticleTag", tag));
   }
-  return http.get(`/api/Articles/search?${params.toString()}`);
+  return http.get(`/api/Articles/search?${params.toString()}`).then((res) => ({
+    ...res,
+    data: filterMessageBoardArticles(res.data)
+  }));
 }
 
 export function getArticleByIdApi(articleId) {
@@ -59,9 +77,15 @@ export function toggleArticleRecommendApi(articleId) {
 }
 
 export function getToppedArticlesApi() {
-  return http.get("/api/Articles/topped");
+  return http.get("/api/Articles/topped").then((res) => ({
+    ...res,
+    data: filterMessageBoardArticles(res.data)
+  }));
 }
 
 export function getRecommendedArticlesApi() {
-  return http.get("/api/Articles/recommended");
+  return http.get("/api/Articles/recommended").then((res) => ({
+    ...res,
+    data: filterMessageBoardArticles(res.data)
+  }));
 }

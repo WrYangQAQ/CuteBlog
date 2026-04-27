@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { onMounted, reactive, ref } from "vue";
 import {
   createCategoryApi,
@@ -22,29 +22,29 @@ async function loadRows() {
     rows.value = res.data || [];
   } catch (err) {
     rows.value = [];
-    message.value = err?.payload?.message || err.message || "加载分类失败";
+    message.value = err?.payload?.message || err.message || "鍔犺浇鍒嗙被澶辫触";
   }
 }
 
 async function createRow() {
   try {
     await createCategoryApi({ ...form });
-    message.value = "分类创建成功";
+    message.value = "鍒嗙被鍒涘缓鎴愬姛";
     form.name = "";
     form.description = "";
     form.sortOrder = 1;
     await loadRows();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "创建分类失败";
+    message.value = err?.payload?.message || err.message || "鍒涘缓鍒嗙被澶辫触";
   }
 }
 
 async function updateRow(row) {
   try {
     await updateCategoryApi(row.id, row);
-    message.value = "分类更新成功";
+    message.value = "鍒嗙被鏇存柊鎴愬姛";
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "更新分类失败";
+    message.value = err?.payload?.message || err.message || "鏇存柊鍒嗙被澶辫触";
   }
 }
 
@@ -54,7 +54,7 @@ async function removeRow(id) {
     await deleteCategoryApi(id);
     await loadRows();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "删除分类失败";
+    message.value = err?.payload?.message || err.message || "鍒犻櫎鍒嗙被澶辫触";
   }
 }
 
@@ -64,13 +64,12 @@ onMounted(loadRows);
 <template>
   <section class="stack">
     <div class="panel">
-      <h2>分类管理</h2>
-      <p v-if="message" :class="message.includes('成功') ? 'ok' : 'error'">{{ message }}</p>
+      <h2>鍒嗙被绠＄悊</h2>
       <div class="inline-form">
         <input v-model.trim="form.name" placeholder="分类名" />
-        <input v-model.trim="form.description" placeholder="描述" />
-        <input v-model.number="form.sortOrder" type="number" min="1" placeholder="排序" />
-        <button class="btn solid" @click="createRow">新增</button>
+        <input v-model.trim="form.description" placeholder="鎻忚堪" />
+        <input v-model.number="form.sortOrder" type="number" min="1" placeholder="鎺掑簭" />
+        <button class="btn solid" @click="createRow">鏂板</button>
       </div>
     </div>
 
@@ -79,10 +78,10 @@ onMounted(loadRows);
         <thead>
           <tr>
             <th>ID</th>
-            <th>名称</th>
-            <th>描述</th>
-            <th>排序</th>
-            <th>操作</th>
+            <th>鍚嶇О</th>
+            <th>鎻忚堪</th>
+            <th>鎺掑簭</th>
+            <th>鎿嶄綔</th>
           </tr>
         </thead>
         <tbody>
@@ -92,8 +91,8 @@ onMounted(loadRows);
             <td><input v-model="row.description" /></td>
             <td><input v-model.number="row.sortOrder" type="number" /></td>
             <td class="table-actions">
-              <button class="btn ghost" @click="updateRow(row)">保存</button>
-              <button class="btn danger" @click="removeRow(row.id)">删除</button>
+              <button class="btn ghost" @click="updateRow(row)">淇濆瓨</button>
+              <button class="btn danger" @click="removeRow(row.id)">鍒犻櫎</button>
             </td>
           </tr>
         </tbody>

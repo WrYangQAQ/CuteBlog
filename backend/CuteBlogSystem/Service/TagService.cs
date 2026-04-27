@@ -10,18 +10,41 @@ namespace CuteBlogSystem.Service
         private readonly TagRepository _tagRepository;
         private readonly ArticleRepository _articleRepository;
         private readonly ILogger<TagService> _logger;
-        public TagService(TagRepository tagRepository, ArticleRepository articleRepository, ILogger<TagService> logger)
+        private readonly CategoryRepository _categoryRepository;
+        public TagService(TagRepository tagRepository, 
+            ArticleRepository articleRepository,
+            ILogger<TagService> logger,
+            CategoryRepository categoryRepository)
         {
             _tagRepository = tagRepository;
             _articleRepository = articleRepository;
             _logger = logger;
+            _categoryRepository = categoryRepository;
         }
-
 
         // 获取所有标签
         public async Task<ApiResponse> GetAllTagsAsync()
         {
             List<Tag> tags = await _tagRepository.GetAllTagsAsync();
+            List<GetTagDTO> tagDTOs = tags.Select(t => new GetTagDTO
+            {
+                Name = t.Name,
+                CategoryId = t.CategoryId,
+            }).ToList();
+            if (tagDTOs == null || tagDTOs.Count == 0)
+            {
+                return new ApiResponse(false, "没有找到任何标签", code: ResponseCode.NotFound);
+            }
+            else
+            {
+                return new ApiResponse(true, "标签列表获取成功", tagDTOs);
+            }
+        }
+
+        // 获取某个分类下的所有标签
+        public async Task<ApiResponse> GetTagsByCategoryIdAsync(int categoryId)
+        {
+            List<Tag> tags = await _tagRepository.GetTagsByCategoryIdAsync(categoryId);
             if (tags == null || tags.Count == 0)
             {
                 return new ApiResponse(false, "没有找到任何标签", code: ResponseCode.NotFound);
@@ -34,8 +57,15 @@ namespace CuteBlogSystem.Service
 
 
         // 添加标签
-        public async Task<ApiResponse> AddTagAsync(Tag tag)
+        public async Task<ApiResponse> AddTagAsync(GetTagDTO tag)
         {
+            // 检查分类是否存在
+            var category = await _categoryRepository.GetCategoryByIdAsync(tag.CategoryId);
+            if (category == null)
+            {
+                return new ApiResponse(false, "分类不存在！");
+            }
+    
             bool success = await _tagRepository.AddTagAsync(tag);
             if (success)
             {
@@ -86,6 +116,17 @@ namespace CuteBlogSystem.Service
                 {
                     return new ApiResponse(false, "标签ID不匹配！");
                 }
+
+                if (updatedTag.CategoryId != 0)
+                {
+                    // 检查分类是否存在
+                    var category = await _categoryRepository.GetCategoryByIdAsync(updatedTag.CategoryId);
+                    if (category == null)
+                    {
+                        return new ApiResponse(false, "分类不存在！");
+                    }
+                }
+
                 bool success = await _tagRepository.UpdateTagAsync(updatedTag, tagId);
                 if (success)
                 {

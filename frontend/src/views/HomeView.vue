@@ -1,20 +1,54 @@
-<script setup>
-import { onMounted, ref } from "vue";
+﻿<script setup>
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import ArticleCard from "../components/ArticleCard.vue";
-import { getRecommendedArticlesApi, getToppedArticlesApi } from "../api/articles";
-import { toAbsoluteAsset } from "../utils/asset";
+import { useAuthStore } from "../stores/auth";
+import { getArticlesApi, getRecommendedArticlesApi, getToppedArticlesApi } from "../api/articles";
+import { formatDate, toAbsoluteAsset } from "../utils/asset";
+import bannerHome from "../assets/images/banner-home.png";
+import heroShark from "../assets/images/hero-shark.png";
+import { Hand, Eye, Heart } from "lucide-vue-next";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const loading = ref(false);
 const message = ref("");
 const topped = ref([]);
-const recommended = ref([]);
+const allArticles = ref([]);
+const profile = computed(() => authStore.profile || {});
+const profileAvatar = computed(() => toAbsoluteAsset(profile.value.avatarUrl) || heroShark);
+const profileName = computed(() => profile.value.nickName || profile.value.userName || "Sharky");
+const profileBio = computed(() => profile.value.bio || "前后端学习中，喜欢可爱风格与实践项目。");
 
-const decoImages = [
-  "/Picture/Avatar/DefaultAvatar/DefaultAvatar_1.png",
-  "/Picture/Avatar/DefaultAvatar/DefaultAvatar_2.png"
-];
+const latestArticles = computed(() => {
+  return [...(allArticles.value || [])]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 4);
+});
+
+const categoryStats = computed(() => {
+  const map = new Map();
+  (allArticles.value || []).forEach((item) => {
+    const key = item.categoryName || "未分类";
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+  return [...map.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+});
+
+const hotTags = computed(() => {
+  const map = new Map();
+  (allArticles.value || []).forEach((item) => {
+    (item.tagNames || []).forEach((tag) => {
+      map.set(tag, (map.get(tag) || 0) + 1);
+    });
+  });
+  return [...map.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+});
 
 function goDetail(id) {
   router.push(`/articles/${id}`);
@@ -24,12 +58,14 @@ async function loadHomeData() {
   loading.value = true;
   message.value = "";
   try {
-    const [topRes, recRes] = await Promise.all([
+    const [topRes, _recRes, allRes] = await Promise.all([
       getToppedArticlesApi(),
-      getRecommendedArticlesApi()
+      getRecommendedArticlesApi(),
+      getArticlesApi()
     ]);
     topped.value = topRes.data || [];
-    recommended.value = recRes.data || [];
+    allArticles.value = allRes.data || [];
+    await authStore.fetchProfile().catch(() => null);
   } catch (err) {
     message.value = err?.payload?.message || err.message || "加载失败";
   } finally {
@@ -41,47 +77,86 @@ onMounted(loadHomeData);
 </script>
 
 <template>
-  <section class="stack">
-    <div class="panel hero-panel panel-soft">
-      <div class="hero-left">
-        <p class="kicker">WELCOME</p>
-        <h2>欢迎来到 CuteBlog 的萌系空间</h2>
-        <p class="hero-text">
-          今天也来记录点可爱的日常吧。点击上方“全部文章”探索内容，或者先看看置顶与推荐。
-        </p>
-        <button class="btn solid" @click="$router.push('/articles')">进入全部文章</button>
+  <section class="page-stack">
+    <header class="sea-hero card" :style="{ backgroundImage: `url(${bannerHome})` }">
+      <div class="hero-copy">
+        <h1>嗨！我是 <span>Sharky</span> <Hand :size="26" class="title-icon" /></h1>
+        <p class="hero-sub">一只热爱编程与分享的小鲨鱼</p>
+        <p>这里记录我的学习笔记、生活点滴和有趣想法，希望对你有帮助。</p>
+        <div class="hero-actions">
+          <button class="btn solid" @click="$router.push('/articles')">查看文章</button>
+          <button class="btn ghost" @click="$router.push('/profile')">关于我</button>
+        </div>
       </div>
-      <div class="hero-right">
-        <img v-for="(img, idx) in decoImages" :key="idx" :src="toAbsoluteAsset(img)" alt="deco" />
-      </div>
-    </div>
+      <img class="hero-avatar" :src="heroShark" alt="hero shark" />
+    </header>
 
     <p v-if="loading" class="hint">加载中...</p>
-    <p v-if="message" class="error">{{ message }}</p>
 
-    <div class="home-feature-grid">
-      <div class="panel panel-dashed">
-        <h2>置顶文章</h2>
-        <div class="card-grid">
-          <div v-for="a in topped" :key="`top-${a.id}`" class="clickable" @click="goDetail(a.id)">
-            <ArticleCard :article="a" />
-          </div>
+    <div class="content-grid">
+      <section class="panel card">
+        <div class="panel-head">
+          <h2>最新文章</h2>
+          <a class="more-link" @click.prevent="$router.push('/articles')">查看全部 →</a>
         </div>
-      </div>
 
-      <div class="panel panel-cut">
-        <h2>推荐文章</h2>
-        <div class="card-grid">
-          <div
-            v-for="a in recommended"
-            :key="`recommend-${a.id}`"
-            class="clickable"
-            @click="goDetail(a.id)"
-          >
-            <ArticleCard :article="a" />
-          </div>
+        <div class="article-line-list">
+          <article v-for="item in latestArticles" :key="item.id" class="article-line" @click="goDetail(item.id)">
+            <img :src="toAbsoluteAsset(item.coverUrl)" alt="cover" />
+            <div class="line-body">
+              <p v-if="topped.some((t) => t.id === item.id)" class="pin-badge">置顶</p>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.summary || "暂无摘要" }}</p>
+              <div class="tags">
+                <span v-for="tag in (item.tagNames || []).slice(0, 4)" :key="tag" class="tag">{{ tag }}</span>
+              </div>
+              <div class="meta">
+                <span>{{ formatDate(item.createdAt) }}</span>
+                <span><Eye :size="15" class="meta-icon" /> {{ item.viewCount }}</span>
+                <span><Heart :size="15" class="meta-icon" /> {{ item.likeCount }}</span>
+              </div>
+            </div>
+          </article>
         </div>
-      </div>
+      </section>
+
+      <aside class="right-column">
+        <section class="panel side-panel card">
+          <h2>关于我</h2>
+          <div class="about-mini">
+            <img :src="profileAvatar" alt="avatar" />
+            <h3>{{ profileName }}</h3>
+            <p>{{ profileBio }}</p>
+            <div class="mini-stats">
+              <div><strong>{{ allArticles.length }}</strong><span>文章</span></div>
+              <div><strong>{{ categoryStats.length }}</strong><span>分类</span></div>
+              <div><strong>{{ hotTags.length }}</strong><span>标签</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel side-panel card">
+          <div class="panel-head">
+            <h2>文章分类</h2>
+            <a class="more-link" @click.prevent="$router.push('/categories')">查看全部 →</a>
+          </div>
+          <ul class="rank-list">
+            <li v-for="item in categoryStats" :key="item.name">
+              <span>{{ item.name }}</span>
+              <b>{{ item.count }}</b>
+            </li>
+          </ul>
+        </section>
+
+        <section class="panel side-panel card">
+          <h2>热门标签</h2>
+          <div class="tags cloud">
+            <span v-for="tag in hotTags" :key="tag.name" class="tag">{{ tag.name }}</span>
+          </div>
+        </section>
+      </aside>
     </div>
   </section>
 </template>
+
+

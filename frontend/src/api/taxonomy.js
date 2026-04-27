@@ -1,4 +1,4 @@
-import http from "./http";
+﻿import http from "./http";
 
 export function getCategoriesApi() {
   return http.get("/api/Categories");
@@ -17,7 +17,11 @@ export function deleteCategoryApi(categoryId) {
 }
 
 export function getTagsApi() {
-  return http.get("/api/Tags");
+  return http.get("/api/Tags/all");
+}
+
+export function getTagsByCategoryApi(categoryId) {
+  return http.get(`/api/Tags/category/${categoryId}`);
 }
 
 export function createTagApi(payload) {

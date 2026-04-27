@@ -13,14 +13,16 @@ namespace CuteBlogSystem.Service
         private readonly ImageUploadService _imageUploadService;
         private readonly ArticleTagRepository _articleTagRepository;
         private readonly UserRepository _userRepository;
+        private readonly CategoryRepository _categoryRepository;
         private readonly MyDbContext _dbContext; // 用于事务处理
         private readonly ILogger<ArticleService> _logger;
-       
+
         public ArticleService(ArticleRepository articleRepository,
                               ArticleLikeRepository articleLikeRepository,
                               ImageUploadService imageUploadService,
                               ArticleTagRepository articleTagRepository,
                               UserRepository userRepository,
+                              CategoryRepository categoryRepository,
                               MyDbContext dbContext,
                               ILogger<ArticleService> logger)
         {
@@ -29,6 +31,7 @@ namespace CuteBlogSystem.Service
             _imageUploadService = imageUploadService;
             _articleTagRepository = articleTagRepository;
             _userRepository = userRepository;
+            _categoryRepository = categoryRepository;
             _dbContext = dbContext;
             _logger = logger;
         }
@@ -72,7 +75,7 @@ namespace CuteBlogSystem.Service
             try
             {
                 // 调用仓储层，根据 SearchArticleDTO 查询文章列表
-                List<Article> articles = await _articleRepository.SearchArticlesAsync(searchArticleDTO.Keyword, 
+                List<Article> articles = await _articleRepository.SearchArticlesAsync(searchArticleDTO.Keyword,
                                                                                       searchArticleDTO.ArticleTag,
                                                                                       searchArticleDTO.Category);
                 List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
@@ -112,7 +115,7 @@ namespace CuteBlogSystem.Service
 
                 // 文章存在，将文章内容转换为 DTO
                 DisplayArticleDTO displayArticleDTO = new DisplayArticleDTO(article);
-                
+
                 // 返回成功响应
                 return new ApiResponse(true, "获取文章内容成功！", displayArticleDTO);
             }
@@ -162,9 +165,12 @@ namespace CuteBlogSystem.Service
         // 发布文章
         public async Task<ApiResponse> PublishArticleAsync(PublishArticleDTO publishArticleDTO, int userId)
         {
+            string? finalCoverUrl = null;
+
             try
             {
-                // 扩展：对文章进行内容审核：例如敏感词过滤、垃圾内容检测等，如果审核不通过，则返回失败响应
+                // ToDo：对文章进行内容审核：例如敏感词过滤、垃圾内容检测等，如果审核不通过，则返回失败响应
+
 
                 // 创建新的文章对象
                 Article article = new Article
@@ -178,6 +184,22 @@ namespace CuteBlogSystem.Service
                     UpdatedAt = DateTime.UtcNow,
                     CoverUrl = publishArticleDTO.CoverUrl
                 };
+
+                // 将封面图片从临时路径移动到正式路径（如果有封面图片）
+                var finalize = await _imageUploadService.FinalizeTempCoverAsync(
+                       publishArticleDTO.CoverUrl, userId,
+                       "Picture/ArticleImage/CoverTemp",
+                       "Picture/ArticleImage/Cover");
+
+                if (!finalize.Success)
+                {
+                    return finalize; // 如果移动失败，直接返回失败响应
+                }
+
+                finalCoverUrl = finalize.Data?.ToString();
+                article.CoverUrl = finalCoverUrl!;
+
+
                 // 调用仓储层的方法将文章保存到数据库中
                 await _articleRepository.AddArticleAsync(article);
                 return new ApiResponse(true, "发布文章成功！");
@@ -187,6 +209,14 @@ namespace CuteBlogSystem.Service
                 // 记录异常日志
                 _logger.LogError(ex, $"发布文章失败！\nex.message:{ex.Message}");
 
+                // 关键补偿：DB失败时删掉刚转正的封面
+                if (!string.IsNullOrWhiteSpace(finalCoverUrl))
+                {
+                    await _imageUploadService.TryDeleteFinalCoverAsync(
+                        finalCoverUrl,
+                        "Picture/ArticleImage/Cover");
+                }
+
                 return new ApiResponse(false, $"发布文章失败！");
             }
         }
@@ -194,8 +224,8 @@ namespace CuteBlogSystem.Service
         // （取消）点赞文章
         public async Task<ApiResponse> ToggleArticleLikeAsync(int articleId, int userId)
         {
-            // 假设 _dbContext 是注入的 DbContext（或通过工作单元获取）
-            // 如果仓储各自持有独立的 DbContext，则需要改为注入同一个 DbContext 实例
+
+            // 注入同一个 DbContext 实例
             using var transaction = await _dbContext.Database.BeginTransactionAsync();
             try
             {
@@ -243,18 +273,39 @@ namespace CuteBlogSystem.Service
 
 
         // 上传文章封面图片
-        public async Task<ApiResponse> UploadArticleCoverAsync(IFormFile file)
+        public async Task<ApiResponse> UploadArticleCoverAsync(IFormFile file,int userId)
         {
+            // 1. 验证用户是否登录
+            if (userId == 0)
+            {
+                return new ApiResponse(false, $"请先登录！", code: ResponseCode.Unauthorized);
+            }
+
             var MaxPictureCoverSize = 5 * 1024 * 1024; // 5MB
 
-            // 调用图片上传方法
+            // 2. 清理用户临时存储空间中过期的封面图片
+            var tempCleanup = await _imageUploadService.CleanupExpiredTempCoversAsync( 
+                $"Picture/ArticleImage/CoverTemp/{userId}");
+            if (!tempCleanup.Success)
+            {
+                return tempCleanup; // 如果清理失败，直接返回失败响应
+            }
+
+            // 3. 检测用户临时存储空间是否已满
+            var tempQuotaCheck = await _imageUploadService.CheckUserTempQuotaAsync(userId, file.Length);
+            if (!tempQuotaCheck.Success)
+            {
+                return tempQuotaCheck; // 如果检测失败，直接返回失败响应
+            }
+
+            // 4. 调用图片上传方法
             var uploadResult = await _imageUploadService.UploadImageAsync(
                 file,
-                "Picture/ArticleImage/Cover",
+                $"Picture/ArticleImage/CoverTemp/{userId}",
                 MaxPictureCoverSize
             );
 
-            // 3. 上传失败直接返回
+            // 5. 上传失败直接返回
             if (!uploadResult.Success)
             {
                 // 记录异常日志
@@ -262,7 +313,7 @@ namespace CuteBlogSystem.Service
                 return uploadResult;
             }
 
-            // 4. 上传成功，取出图片路径
+            // 6. 上传成功，取出图片路径
             var coverUrl = uploadResult.Data?.ToString();
 
             return new ApiResponse(true, "封面上传成功！", coverUrl);
@@ -276,7 +327,7 @@ namespace CuteBlogSystem.Service
             {
                 if (!await CheckArticleAuthorOrAdminAsync(articleId, userId))
                 {
-                    return new ApiResponse(false, $"没有权限删除这篇文章！", code:ResponseCode.Unauthorized);
+                    return new ApiResponse(false, $"没有权限删除这篇文章！", code: ResponseCode.Unauthorized);
                 }
                 // 调用仓储层，根据id查询文章
                 Article article = await _articleRepository.GetArticleByIdAsync(articleId);
@@ -455,6 +506,7 @@ namespace CuteBlogSystem.Service
                 // 调用仓储层获取推荐文章列表
                 List<Article> recommendArticles = await _articleRepository.GetRecommendedArticlesAsync();
                 List<GetArticleListDTO> recommendArticleDTOs = new List<GetArticleListDTO>();
+
                 // 将推荐文章列表转换为 DTO
                 for (int i = 0; i < recommendArticles.Count; i++)
                 {
@@ -499,6 +551,67 @@ namespace CuteBlogSystem.Service
                 }
             }
             return false; // 既不是文章作者也不是管理员，返回false
+        }
+
+        // 获取最新发布的五篇文章
+        public async Task<ApiResponse> GetLatestArticlesAsync()
+        {
+            try
+            {
+                // 调用仓储层获取最新发布的五篇文章
+                List<Article> latestArticles = await _articleRepository.GetLatestArticlesAsync();
+                List<GetArticleListDTO> latestArticleDTOs = new List<GetArticleListDTO>();
+                // 将文章列表转换为 DTO
+                for (int i = 0; i < latestArticles.Count; i++)
+                {
+                    GetArticleListDTO articleListDTO = new GetArticleListDTO(latestArticles[i]);
+                    latestArticleDTOs.Add(articleListDTO);
+                }
+                // 返回成功响应
+                return new ApiResponse(true, "获取最新发布的五篇文章成功！", latestArticleDTOs);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                _logger.LogError(ex, $"获取最新发布的五篇文章失败！\nex.message:{ex.Message}");
+                // 返回失败响应
+                return new ApiResponse(false, $"获取最新发布的五篇文章失败！", null);
+            }
+        }
+
+        // 根据分类名查询文章列表
+        public async Task<ApiResponse> GetArticlesByCategoryNameAsync(string categoryName)
+        {
+            try
+            {
+                // 根据分类名查询该分类id
+                var categoryId = await _categoryRepository.SearchCategoriesByNameAsync(categoryName);
+
+                if(categoryId == null)
+                {
+                    return new ApiResponse(false, $"未找到分类名为'{categoryName}'的分类！", null);
+                }
+
+                // 调用仓储层，根据分类名查询文章列表
+                List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
+                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
+
+                // 将文章列表转换为 DTO
+                for (int i = 0; i < articles.Count; i++)
+                {
+                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
+                    articleListDTOs.Add(articleListDTO);
+                }
+                // 返回成功响应
+                return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                _logger.LogError(ex, $"根据分类名'{categoryName}'查询文章列表失败！\nex.message:{ex.Message}");
+                // 返回失败响应
+                return new ApiResponse(false, $"根据分类名'{categoryName}'查询文章列表失败！", null);
+            }
         }
     }
 }

@@ -1,84 +1,53 @@
-<script setup>
+﻿<script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import ArticleCard from "../components/ArticleCard.vue";
 import { getArticlesApi, searchArticlesApi } from "../api/articles";
-import { getCategoriesApi, getTagsApi } from "../api/taxonomy";
+import { toAbsoluteAsset } from "../utils/asset";
+import bannerArticle from "../assets/images/banner-article.png";
+import decorationShark from "../assets/images/decoration-shark.png";
+import { BookOpenText, Eye, Heart } from "lucide-vue-next";
 
 const router = useRouter();
 const loading = ref(false);
 const message = ref("");
 const articles = ref([]);
-const allArticlesSource = ref([]);
-const categories = ref([]);
-const tags = ref([]);
+const searchForm = reactive({ keyword: "", articleTag: [] });
 
-const searchForm = reactive({
-  keyword: "",
-  category: "",
-  articleTag: []
-});
-const showAllTags = ref(false);
-const defaultVisibleCount = 8;
-const tagKeyword = ref("");
-
-const categoryFilteredTags = computed(() => {
-  if (!searchForm.category) return tags.value || [];
-  const tagSet = new Set();
-  (allArticlesSource.value || []).forEach((article) => {
-    if (article.categoryName === searchForm.category) {
-      (article.tagNames || []).forEach((tag) => tagSet.add(tag));
-    }
+const categoryTabs = computed(() => {
+  const map = new Map();
+  (articles.value || []).forEach((a) => {
+    const key = a.categoryName || "未分类";
+    map.set(key, (map.get(key) || 0) + 1);
   });
-  return (tags.value || []).filter((tag) => tagSet.has(tag.name));
+  return [
+    { name: "全部文章", count: articles.value.length },
+    ...[...map.entries()].map(([name, count]) => ({ name, count }))
+  ];
 });
 
-const sortedCandidateTags = computed(() => {
-  const source = categoryFilteredTags.value || [];
-  const keyword = tagKeyword.value.trim().toLowerCase();
-  const usageMap = new Map();
-  (allArticlesSource.value || []).forEach((article) => {
-    (article.tagNames || []).forEach((name) => {
-      usageMap.set(name, (usageMap.get(name) || 0) + 1);
-    });
+const hotArticles = computed(() => {
+  return [...(articles.value || [])]
+    .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))
+    .slice(0, 5);
+});
+
+const hotTags = computed(() => {
+  const map = new Map();
+  (articles.value || []).forEach((a) => {
+    (a.tagNames || []).forEach((t) => map.set(t, (map.get(t) || 0) + 1));
   });
-
-  const filtered = source.filter((t) => (keyword ? t.name.toLowerCase().includes(keyword) : true));
-  return filtered.sort((a, b) => (usageMap.get(b.name) || 0) - (usageMap.get(a.name) || 0));
+  return [...map.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
 });
 
-const visibleTags = computed(() => {
-  const all = sortedCandidateTags.value;
-  const selected = searchForm.articleTag || [];
-  const selectedSet = new Set(selected);
-  const selectedTags = all.filter((t) => selectedSet.has(t.name));
-  const unselectedTags = all.filter((t) => !selectedSet.has(t.name));
-  const ordered = [...selectedTags, ...unselectedTags];
-  if (showAllTags.value) return ordered;
-  return ordered.slice(0, defaultVisibleCount);
-});
-
-function toggleTag(name) {
-  if (searchForm.articleTag.includes(name)) {
-    searchForm.articleTag = searchForm.articleTag.filter((i) => i !== name);
-  } else {
-    searchForm.articleTag = [...searchForm.articleTag, name];
-  }
-}
-
-async function loadPageData() {
+async function loadData() {
   loading.value = true;
   message.value = "";
   try {
-    const [allRes, cateRes, tagRes] = await Promise.all([
-      getArticlesApi(),
-      getCategoriesApi().catch(() => ({ data: [] })),
-      getTagsApi().catch(() => ({ data: [] }))
-    ]);
-    allArticlesSource.value = allRes.data || [];
-    articles.value = allRes.data || [];
-    categories.value = cateRes.data || [];
-    tags.value = tagRes.data || [];
+    const res = await getArticlesApi();
+    articles.value = res.data || [];
   } catch (err) {
     message.value = err?.payload?.message || err.message || "加载失败";
   } finally {
@@ -99,78 +68,79 @@ async function search() {
   }
 }
 
-function resetSearch() {
-  searchForm.keyword = "";
-  searchForm.category = "";
-  searchForm.articleTag = [];
-  tagKeyword.value = "";
-  showAllTags.value = false;
-  loadPageData();
-}
-
 function goDetail(id) {
   router.push(`/articles/${id}`);
 }
 
-onMounted(loadPageData);
+onMounted(loadData);
 </script>
 
 <template>
-  <section class="stack">
-    <div class="panel compact-search-panel panel-soft">
-      <h2>全部文章与搜索</h2>
-      <div class="compact-search-grid">
-        <input v-model.trim="searchForm.keyword" placeholder="输入标题关键词" />
-        <select v-model="searchForm.category">
-          <option value="">全部分类</option>
-          <option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</option>
-        </select>
-        <input v-model.trim="tagKeyword" placeholder="搜索标签..." />
-        <div class="tag-chip-grid">
-          <button
-            v-for="tag in visibleTags"
-            :key="tag.id"
-            type="button"
-            class="tag-chip"
-            :class="{ active: searchForm.articleTag.includes(tag.name) }"
-            @click="toggleTag(tag.name)"
-          >
-            #{{ tag.name }}
-          </button>
-        </div>
-        <div
-          class="tag-tools"
-          v-if="
-            sortedCandidateTags.length > defaultVisibleCount ||
-            (searchForm.articleTag.length && !showAllTags)
-          "
-        >
-          <button class="btn ghost mini" type="button" @click="showAllTags = !showAllTags">
-            {{ showAllTags ? "收起标签" : "展开更多标签" }}
-          </button>
-        </div>
-        <div class="selected-tags" v-if="searchForm.articleTag.length">
-          <span class="hint">已选：</span>
-          <span class="tag selected" v-for="name in searchForm.articleTag" :key="name">#{{ name }}</span>
-          <button class="btn ghost mini" type="button" @click="searchForm.articleTag = []">
-            清空
-          </button>
-        </div>
-        <div class="action-row search-actions">
-          <button class="btn solid" @click="search" :disabled="loading">搜索</button>
-          <button class="btn ghost" @click="resetSearch" :disabled="loading">重置</button>
-        </div>
+  <section class="page-stack">
+    <header class="sea-hero mini" :style="{ backgroundImage: `url(${bannerArticle})` }">
+      <div class="hero-copy">
+        <h1>文章 <BookOpenText :size="28" class="title-icon" /></h1>
+        <p class="hero-sub">记录编程学习、技术探索与生活思考</p>
       </div>
-    </div>
+      <img class="hero-avatar" :src="decorationShark" alt="article decoration" />
+    </header>
 
-    <div class="panel panel-dashed">
-      <p v-if="message" class="error">{{ message }}</p>
-      <p v-if="loading" class="hint">加载中...</p>
-      <div class="card-grid">
-        <div v-for="a in articles" :key="a.id" class="clickable" @click="goDetail(a.id)">
-          <ArticleCard :article="a" />
+    <div class="content-grid">
+      <section class="panel">
+        <div class="tabs-row">
+          <button v-for="tab in categoryTabs" :key="tab.name" class="tab-pill">
+            {{ tab.name }} <small>{{ tab.count }}</small>
+          </button>
         </div>
-      </div>
+
+        <div class="article-line-list compact">
+          <article v-for="item in articles" :key="item.id" class="article-line" @click="goDetail(item.id)">
+            <img :src="toAbsoluteAsset(item.coverUrl)" alt="cover" />
+            <div class="line-body">
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.summary || "暂无摘要" }}</p>
+              <div class="tags">
+                <span v-for="tag in (item.tagNames || []).slice(0, 4)" :key="tag" class="tag">{{ tag }}</span>
+              </div>
+              <div class="meta">
+                <span>{{ item.createdAt?.slice(0, 10) }}</span>
+                <span><Eye :size="15" class="meta-icon" /> {{ item.viewCount }}</span>
+                <span><Heart :size="15" class="meta-icon" /> {{ item.likeCount }}</span>
+              </div>
+            </div>
+          </article>
+        </div>
+        <p v-if="loading" class="hint">加载中...</p>
+      </section>
+
+      <aside class="right-column">
+        <section class="panel side-panel">
+          <input v-model.trim="searchForm.keyword" placeholder="搜索文章..." />
+          <button class="btn solid" style="margin-top:10px" @click="search">搜索</button>
+        </section>
+
+        <section class="panel side-panel">
+          <h2>热门文章</h2>
+          <ul class="rank-list">
+            <li v-for="item in hotArticles" :key="item.id" @click="goDetail(item.id)">
+              <span>{{ item.title }}</span>
+              <b>{{ item.viewCount }}</b>
+            </li>
+          </ul>
+        </section>
+
+        <section class="panel side-panel">
+          <h2>热门标签</h2>
+          <div class="tags cloud">
+            <span v-for="tag in hotTags" :key="tag.name" class="tag">{{ tag.name }}</span>
+          </div>
+        </section>
+      </aside>
     </div>
   </section>
 </template>
+
+
+
+
+

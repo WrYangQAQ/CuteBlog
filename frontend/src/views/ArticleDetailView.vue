@@ -1,7 +1,8 @@
-e<script setup>
+﻿<script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { marked } from "marked";
+import { ThumbsUp } from "lucide-vue-next";
 import { getArticleByIdApi, readArticleApi, toggleArticleLikeApi } from "../api/articles";
 import { getCommentsApi, publishCommentApi } from "../api/comments";
 import { getProfileApi } from "../api/auth";
@@ -73,7 +74,7 @@ async function reportReadDuration() {
   try {
     await readArticleApi(articleId.value, stay);
   } catch {
-    // ignore read report errors
+    // ignore
   }
 }
 
@@ -86,49 +87,52 @@ onBeforeUnmount(reportReadDuration);
 </script>
 
 <template>
-  <section class="panel detail-page">
-    <p v-if="loading" class="hint">加载中...</p>
-    <p v-if="message" class="error">{{ message }}</p>
+  <section class="page-stack">
+    <section class="panel detail-page">
+      <p v-if="loading" class="hint">加载中...</p>
 
-    <template v-if="article">
-      <h2>{{ article.title }}</h2>
-      <div class="meta">
-        <span>作者：{{ article.authorName }}</span>
-        <span>分类：{{ article.categoryName }}</span>
-        <span>{{ formatDate(article.createdAt) }}</span>
-      </div>
-      <div class="tags">
-        <span v-for="tag in article.tagNames || []" :key="tag" class="tag">#{{ tag }}</span>
-      </div>
-
-      <button class="thumb-btn" :class="{ liked }" @click="likeArticle" aria-label="like">
-        👍
-      </button>
-
-      <article class="markdown-body" v-html="htmlContent"></article>
-
-      <section class="comment-section">
-        <h3>评论区（{{ comments.length }}）</h3>
-        <div class="comment-form">
-          <textarea v-model="newComment" maxlength="500" placeholder="写点什么吧..." />
-          <button class="btn solid" @click="publishComment">发表评论</button>
+      <template v-if="article">
+        <h1>{{ article.title }}</h1>
+        <div class="meta">
+          <span>作者：{{ article.authorName }}</span>
+          <span>分类：{{ article.categoryName }}</span>
+          <span>{{ formatDate(article.createdAt) }}</span>
         </div>
-        <div class="comment-list">
-          <p v-if="!comments.length" class="hint">还没有评论，来抢沙发吧。</p>
-          <div v-for="(c, idx) in comments" :key="`${idx}-${c.createdAt}`" class="comment-item">
-            <div class="comment-main">
-              <img class="comment-avatar" :src="toAbsoluteAsset(c.avatarUrl)" alt="avatar" />
-              <div class="comment-body">
-                <div class="comment-head">
-                  <strong>{{ c.userName }}</strong>
-                  <span>{{ formatDate(c.createdAt) }}</span>
+        <div class="tags">
+          <span v-for="tag in article.tagNames || []" :key="tag" class="tag">#{{ tag }}</span>
+        </div>
+
+        <div class="article-actions">
+          <button class="thumb-btn" :class="{ liked }" @click="likeArticle" aria-label="点赞">
+            <ThumbsUp :size="22" :stroke-width="2.4" />
+          </button>
+        </div>
+
+        <article class="markdown-body" v-html="htmlContent"></article>
+
+        <section class="comment-section">
+          <h3>评论区（{{ comments.length }}）</h3>
+          <div class="comment-form">
+            <textarea v-model="newComment" maxlength="500" placeholder="写点什么吧..." />
+            <button class="btn solid" @click="publishComment">发表评论</button>
+          </div>
+          <div class="comment-list">
+            <p v-if="!comments.length" class="hint">还没有评论，来抢沙发吧。</p>
+            <div v-for="(c, idx) in comments" :key="`${idx}-${c.createdAt}`" class="comment-item">
+              <div class="comment-main">
+                <img class="comment-avatar" :src="toAbsoluteAsset(c.avatarUrl)" alt="avatar" />
+                <div class="comment-body">
+                  <div class="comment-head">
+                    <strong>{{ c.userName }}</strong>
+                    <span>{{ formatDate(c.createdAt) }}</span>
+                  </div>
+                  <p>{{ c.content }}</p>
                 </div>
-                <p>{{ c.content }}</p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-    </template>
+        </section>
+      </template>
+    </section>
   </section>
 </template>

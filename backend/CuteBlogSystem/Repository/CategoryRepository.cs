@@ -48,6 +48,8 @@ namespace CuteBlogSystem.Repository
                 {
                     return false; // 分类不存在
                 }
+
+
                 _dbContext.Categories.Remove(category);
                 await _dbContext.SaveChangesAsync();
                 return true;
@@ -91,6 +93,21 @@ namespace CuteBlogSystem.Repository
                 _logger.LogWarning($"未找到ID为{categoryId}的分类！");
             }
             return category;
+        }
+
+        // 检查分类下是否有标签
+        public async Task<bool> HasTagsAsync(int categoryId)
+        {
+            return await _dbContext.Tags.AnyAsync(t => t.CategoryId == categoryId);
+        }
+
+        // 根据用户信息模糊搜索分类，返回分类Id
+        public async Task<int> SearchCategoriesByNameAsync(string name)
+        {
+            return await _dbContext.Categories
+                .Where(c => c.Name.Contains(name))
+                .Select(c => c.Id)
+                .FirstOrDefaultAsync();
         }
     }
 }

@@ -18,5 +18,6 @@
 
         // 导航属性
         public virtual ICollection<Article> Articles { get; set; } = new List<Article>();
+        public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
     }
 }

@@ -110,6 +110,13 @@ namespace CuteBlogSystem.Config
                 .HasForeignKey(al => al.ArticleId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // 配置 Tag -> Category 的外键关系
+            modelBuilder.Entity<Tag>()
+                .HasOne(t => t.Category)
+                .WithMany(c => c.Tags)
+                .HasForeignKey(t => t.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);   // 删除分类时不删除标签，避免数据丢失
+
             base.OnModelCreating(modelBuilder);
         }
     }

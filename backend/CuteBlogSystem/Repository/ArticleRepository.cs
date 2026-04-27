@@ -128,5 +128,30 @@ namespace CuteBlogSystem.Repository
             }
             return await query.ToListAsync();
         }
+
+        // 获取最新发布的五篇文章
+        public async Task<List<Article>> GetLatestArticlesAsync()
+        {
+            return await _dbContext.Articles
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(5)
+                .Include(a => a.Category)
+                .Include(a => a.User)
+                .Include(a => a.ArticleTags)
+                .ThenInclude(at => at.Tag)
+                .ToListAsync();
+        }
+
+        // 根据分类Id查询该分类下的所有文章列表
+        public async Task<List<Article>> GetArticlesByCategoryAsync(int categoryId)
+        {
+            return await _dbContext.Articles
+                .Where(a => a.Category.Id == categoryId)
+                .Include(a => a.Category)
+                .Include(a => a.User)
+                .Include(a => a.ArticleTags)
+                    .ThenInclude(at => at.Tag)
+                .ToListAsync();
+        }
     }
 }

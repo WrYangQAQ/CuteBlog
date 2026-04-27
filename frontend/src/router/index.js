@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from "vue-router";
+﻿import { createRouter, createWebHistory } from "vue-router";
 import HomeView from "../views/HomeView.vue";
 import ArticlesView from "../views/ArticlesView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -10,12 +10,20 @@ import EditArticleView from "../views/EditArticleView.vue";
 import AdminDashboardView from "../views/AdminDashboardView.vue";
 import AdminCategoriesView from "../views/AdminCategoriesView.vue";
 import AdminTagsView from "../views/AdminTagsView.vue";
+import CategoriesView from "../views/CategoriesView.vue";
+import TagsView from "../views/TagsView.vue";
+import ArchiveView from "../views/ArchiveView.vue";
+import MessageBoardView from "../views/MessageBoardView.vue";
 
 const routes = [
   { path: "/login", name: "login", component: LoginView, meta: { guestOnly: true } },
   { path: "/register", name: "register", component: RegisterView, meta: { guestOnly: true } },
   { path: "/", name: "home", component: HomeView, meta: { requiresAuth: true } },
   { path: "/articles", name: "articles", component: ArticlesView, meta: { requiresAuth: true } },
+  { path: "/categories", name: "categories", component: CategoriesView, meta: { requiresAuth: true } },
+  { path: "/tags", name: "tags", component: TagsView, meta: { requiresAuth: true } },
+  { path: "/archive", name: "archive", component: ArchiveView, meta: { requiresAuth: true } },
+  { path: "/messages", name: "messages", component: MessageBoardView, meta: { requiresAuth: true } },
   {
     path: "/articles/:id",
     name: "article-detail",

@@ -12,15 +12,21 @@ namespace CuteBlogSystem.Service
         private readonly ArticleRepository _articleRepository;
         private readonly CommentRepository _commentRepository;
         private readonly ILogger<CommentService> _logger;
-       
+        private readonly IConfiguration _configuration;
 
 
-        public CommentService(UserRepository userRepository, ArticleRepository articleRepository, CommentRepository commentRepository, ILogger<CommentService> logger)
+
+        public CommentService(UserRepository userRepository, 
+            ArticleRepository articleRepository, 
+            CommentRepository commentRepository, 
+            ILogger<CommentService> logger,
+            IConfiguration configuration)
         {
             _userRepository = userRepository;
             _articleRepository = articleRepository;
             _commentRepository = commentRepository;
             _logger = logger;
+            _configuration = configuration;
         }
 
         // 发布评论
@@ -158,6 +164,50 @@ namespace CuteBlogSystem.Service
                 }
             }
             return false; // 既不是文章作者也不是管理员，返回false
+        }
+
+        // 删除留言
+        public async Task<ApiResponse> DeleteMessageAsync(int commentId, int userId)
+        {
+            Comment comment = await _commentRepository.GetCommentByIdAsync(commentId);
+
+            if (comment == null)
+            {
+                return new ApiResponse(false, "留言不存在！", code: ResponseCode.NotFound);
+
+            }
+
+            // 判断是否为留言作者本人或者是管理员
+            if (comment.UserId != userId && !await CheckArticleAuthorOrAdminAsync(comment.ArticleId, userId))
+            {
+                return new ApiResponse(false, "您没有权限删除此留言！", code: ResponseCode.Unauthorized);
+            }
+
+            // 判断是否伪造请求删除其他文章的评论
+            bool success = int.TryParse(_configuration["MessageBoardArticleId"], out int messageBoardArticleId);
+            if (success)
+            {
+                if (comment.ArticleId != messageBoardArticleId)
+                {
+                    return new ApiResponse(false, "您没有权限删除此留言！", code: ResponseCode.Unauthorized);
+                }
+            }
+            else
+            {
+                _logger.LogError("配置项MessageBoardArticleId解析失败，请检查配置文件！");
+                return new ApiResponse(false, "服务器配置错误，请稍后再试！", code: ResponseCode.InternalError);
+            }
+
+            try
+            {
+                await _commentRepository.DeleteCommentByIdAsync(commentId);
+                return new ApiResponse(true, "留言删除成功！");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"删除留言时发生错误！\nex.message:{ex.Message}");
+                return new ApiResponse(false, "删除留言时发生错误，请稍后再试！", code: ResponseCode.Conflict);
+            }
         }
     }
 }

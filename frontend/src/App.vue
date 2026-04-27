@@ -1,10 +1,21 @@
-<script setup>
-import { computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+﻿<script setup>
+import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "./stores/auth";
+import FeedbackPopup from "./components/FeedbackPopup.vue";
+import {
+  Home,
+  FileText,
+  Grid2X2,
+  Tag,
+  PlusCircle,
+  Archive,
+  User,
+  MessageCircle
+} from "lucide-vue-next";
+import logoShark from "./assets/images/logo-shark.png";
 
 const authStore = useAuthStore();
-const router = useRouter();
+const darkMode = ref(false);
 
 onMounted(() => {
   authStore.restoreFromToken();
@@ -13,66 +24,61 @@ onMounted(() => {
 const isLoggedIn = computed(() => authStore.isLoggedIn);
 const isAdmin = computed(() => authStore.isAdmin);
 
-const leftPetals = Array.from({ length: 10 }, (_, i) => ({
-  id: `l-${i}`,
-  left: `${5 + (i % 3) * 18}%`,
-  delay: `${(i % 5) * 1.4}s`,
-  duration: `${9 + (i % 4) * 1.7}s`
-}));
+const menuItems = computed(() => [
+  { to: "/", text: "首页", icon: Home },
+  { to: "/articles", text: "文章", icon: FileText },
+  { to: "/categories", text: "分类", icon: Grid2X2 },
+  { to: "/tags", text: "标签", icon: Tag },
+  { to: "/publish", text: "发布", icon: PlusCircle },
+  { to: "/archive", text: "归档", icon: Archive },
+  { to: "/profile", text: "关于我", icon: User },
+  { to: "/messages", text: "留言板", icon: MessageCircle }
+]);
 
-const rightPetals = Array.from({ length: 10 }, (_, i) => ({
-  id: `r-${i}`,
-  right: `${4 + (i % 3) * 17}%`,
-  delay: `${0.8 + (i % 5) * 1.3}s`,
-  duration: `${10 + (i % 4) * 1.6}s`
-}));
-
-function logout() {
-  authStore.logout();
-  router.push("/login");
+function toggleTheme() {
+  darkMode.value = !darkMode.value;
+  document.body.classList.toggle("night-mode", darkMode.value);
 }
 </script>
 
 <template>
   <div class="app-shell">
-    <div class="sakura-layer left">
-      <span
-        v-for="p in leftPetals"
-        :key="p.id"
-        class="petal"
-        :style="{ left: p.left, animationDelay: p.delay, animationDuration: p.duration }"
-      ></span>
-    </div>
-    <div class="sakura-layer right">
-      <span
-        v-for="p in rightPetals"
-        :key="p.id"
-        class="petal"
-        :style="{ right: p.right, animationDelay: p.delay, animationDuration: p.duration }"
-      ></span>
-    </div>
+    <template v-if="isLoggedIn">
+      <div class="shark-layout">
+        <aside class="shark-sidebar card">
+          <div class="sidebar-brand" @click="$router.push('/')">
+            <img class="brand-logo" :src="logoShark" alt="Sharky logo" />
+            <h1>Sharky</h1>
+            <p>Personal Blog</p>
+          </div>
 
-    <header class="cute-header">
-      <div class="brand" @click="$router.push('/')">
-        <span class="brand-badge">萌</span>
-        <h1>CuteBlog</h1>
-      </div>
-      <nav class="nav-links">
-        <router-link v-if="isLoggedIn" to="/">首页</router-link>
-        <router-link v-if="isLoggedIn" to="/articles">全部文章</router-link>
-        <router-link v-if="isLoggedIn" to="/publish">发布文章</router-link>
-        <router-link v-if="isLoggedIn" to="/profile">个人中心</router-link>
-        <router-link v-if="isAdmin" to="/admin/dashboard">管理台</router-link>
-      </nav>
-      <div class="auth-actions">
-        <router-link v-if="!isLoggedIn" class="btn ghost" to="/login">登录</router-link>
-        <router-link v-if="!isLoggedIn" class="btn solid" to="/register">注册</router-link>
-        <button v-if="isLoggedIn" class="btn danger" @click="logout">退出</button>
-      </div>
-    </header>
+          <nav class="sidebar-menu">
+            <router-link v-for="item in menuItems" :key="item.to" :to="item.to" class="menu-item">
+              <component :is="item.icon" :size="18" class="menu-lucide" />
+              <span>{{ item.text }}</span>
+            </router-link>
+          </nav>
 
-    <main class="page-container">
-      <router-view />
-    </main>
+          <div class="sidebar-footer">
+            <button class="night-btn" @click="toggleTheme">{{ darkMode ? "Light" : "Night" }}</button>
+            <router-link v-if="isAdmin" to="/admin/dashboard" class="admin-link">管理员入口</router-link>
+          </div>
+        </aside>
+
+        <section class="shark-main">
+          <main class="page-container">
+            <router-view />
+          </main>
+        </section>
+      </div>
+    </template>
+
+    <template v-else>
+      <main class="auth-root">
+        <router-view />
+      </main>
+    </template>
+
+    <FeedbackPopup />
   </div>
 </template>

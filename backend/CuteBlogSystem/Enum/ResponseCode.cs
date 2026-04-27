@@ -18,9 +18,15 @@
 
         FileMissing = 2001,
         FileTooLarge = 2002,
-        InvalidFileType = 2003,
-        InvalidFileContent = 2004,
-        InvalidInput = 2005,
+        FileProcessingFailed = 2003,
+        InvalidFileType = 2004,
+        InvalidFileContent = 2005,
+        InvalidInput = 2006,
+
+        TempCoverUrlInvalid = 2101,    // 临时封面 URL 不合法
+        TempCoverNotFound = 2102,      // 临时封面文件未找到
+        TempQuotaExceeded = 2103,      // 临时区配额超出限制
+        TempCoverMoveFailed = 2104,    // 临时封面移动失败
 
         UpdateFailed = 3001,
         UploadFailed = 3002,
@@ -33,6 +39,7 @@
         CategoryAlreadyExists = 4005,
 
         InternalError = 5000,
+        
 
     }
 }

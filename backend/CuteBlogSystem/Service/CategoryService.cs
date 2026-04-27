@@ -1,6 +1,7 @@
-﻿using CuteBlogSystem.Entity;
-using CuteBlogSystem.DTO;
+﻿using CuteBlogSystem.DTO;
+using CuteBlogSystem.Entity;
 using CuteBlogSystem.Repository;
+using System.Text;
 
 namespace CuteBlogSystem.Service
 {
@@ -30,26 +31,35 @@ namespace CuteBlogSystem.Service
         public async Task<ApiResponse> GetAllCategoriesAsync()
         {
             var categories = await _categoryRepository.GetAllCategoriesAsync();
-            if (categories == null || categories.Count == 0)
+            List<GetCategoryDTO> categoryListDTOs = categories.Select(c => new GetCategoryDTO(c)).ToList();
+            if (categoryListDTOs == null || categoryListDTOs.Count == 0)
             {
                 return new ApiResponse(false, "目前还没有分类！");
             }
-            return new ApiResponse(true, "获取分类成功！", categories);
+            return new ApiResponse(true, "获取分类成功！", categoryListDTOs);
         }
 
         // 根据id删除分类
         public async Task<ApiResponse> DeleteCategoryAsync(int categoryId)
         {
+            var category = await _categoryRepository.GetCategoryByIdAsync(categoryId);
+            if (category == null)
+            {
+                return new ApiResponse(false, "分类不存在！");
+            }
+
+            var hasTags = await _categoryRepository.HasTagsAsync(categoryId);
+            if (hasTags)
+            {
+                return new ApiResponse(false, "该分类下仍有关联标签，不能删除！");
+            }
+
             bool success = await _categoryRepository.DeleteCategoryAsync(categoryId);
-            if (success)
-            {
-                return new ApiResponse(true, "分类删除成功！");
-            }
-            else
-            {
-                return new ApiResponse(false, "分类删除失败！");
-            }
+            return success
+                ? new ApiResponse(true, "分类删除成功！")
+                : new ApiResponse(false, "分类删除失败！");
         }
+
 
         // 修改分类
         public async Task<ApiResponse> UpdateCategoryAsync(int categoryId, Category updatedCategory)
@@ -60,7 +70,7 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(false, "分类不存在！");
             }
             category.Name = updatedCategory.Name;
-            bool success = await _categoryRepository.AddCategoryAsync(category);
+            bool success = await _categoryRepository.UpdateCategoryAsync(category.Id, category);
             if (success)
             {
                 return new ApiResponse(true, "分类修改成功！", category);
@@ -70,5 +80,21 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(false, "分类修改失败！");
             }
         }
+
+        // 根据id查询分类
+        public async Task<string> GetCategoryByIdAsync(int categoryId)
+        {
+            var category = await _categoryRepository.GetCategoryByIdAsync(categoryId);
+            if (category == null)
+            {
+                return "分类不存在！";
+            }
+            else
+            {
+                return $"分类ID：{category.Id}\n分类名称：{category.Name}";
+            }
+        }
+
+        
     }
 }

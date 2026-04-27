@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
@@ -41,7 +41,7 @@ async function loadMine() {
     totalCount.value = res.data?.totalCount || 0;
     if (isAdmin.value) await loadFlags();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "加载失败";
+    message.value = err?.payload?.message || err.message || "鍔犺浇澶辫触";
   }
 }
 
@@ -50,13 +50,13 @@ function editArticle(id) {
 }
 
 async function deleteArticle(id) {
-  if (!confirm("确定删除这篇文章吗？")) return;
+  if (!confirm("纭畾鍒犻櫎杩欑瘒鏂囩珷鍚楋紵")) return;
   try {
     await deleteArticleApi(id);
-    message.value = "删除成功";
+    message.value = "鍒犻櫎鎴愬姛";
     await loadMine();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "删除失败";
+    message.value = err?.payload?.message || err.message || "鍒犻櫎澶辫触";
   }
 }
 
@@ -65,7 +65,7 @@ async function toggleTop(id) {
     await toggleArticleTopApi(id);
     await loadFlags();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "置顶操作失败";
+    message.value = err?.payload?.message || err.message || "缃《鎿嶄綔澶辫触";
   }
 }
 
@@ -74,7 +74,7 @@ async function toggleRecommend(id) {
     await toggleArticleRecommendApi(id);
     await loadFlags();
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "推荐操作失败";
+    message.value = err?.payload?.message || err.message || "鎺ㄨ崘鎿嶄綔澶辫触";
   }
 }
 
@@ -91,18 +91,17 @@ onMounted(loadMine);
 
 <template>
   <section class="panel">
-    <h2>我的文章管理</h2>
-    <p v-if="message" :class="message.includes('成功') ? 'ok' : 'error'">{{ message }}</p>
+    <h2>鎴戠殑鏂囩珷绠＄悊</h2>
 
     <table class="cute-table">
       <thead>
         <tr>
-          <th>标题</th>
-          <th>分类</th>
-          <th>点赞</th>
-          <th>浏览</th>
-          <th>创建时间</th>
-          <th>操作</th>
+          <th>鏍囬</th>
+          <th>鍒嗙被</th>
+          <th>鐐硅禐</th>
+          <th>娴忚</th>
+          <th>鍒涘缓鏃堕棿</th>
+          <th>鎿嶄綔</th>
         </tr>
       </thead>
       <tbody>
@@ -113,13 +112,13 @@ onMounted(loadMine);
           <td>{{ row.viewCount }}</td>
           <td>{{ formatDate(row.createdAt) }}</td>
           <td class="table-actions">
-            <button class="btn ghost" @click="editArticle(row.id)">编辑</button>
-            <button class="btn danger" @click="deleteArticle(row.id)">删除</button>
+            <button class="btn ghost" @click="editArticle(row.id)">缂栬緫</button>
+            <button class="btn danger" @click="deleteArticle(row.id)">鍒犻櫎</button>
             <button v-if="isAdmin" class="btn ghost" @click="toggleTop(row.id)">
-              {{ topSet.has(row.id) ? "取消置顶" : "设为置顶" }}
+              {{ topSet.has(row.id) ? "鍙栨秷缃《" : "璁句负缃《" }}
             </button>
             <button v-if="isAdmin" class="btn ghost" @click="toggleRecommend(row.id)">
-              {{ recommendSet.has(row.id) ? "取消推荐" : "设为推荐" }}
+              {{ recommendSet.has(row.id) ? "鍙栨秷鎺ㄨ崘" : "璁句负鎺ㄨ崘" }}
             </button>
           </td>
         </tr>

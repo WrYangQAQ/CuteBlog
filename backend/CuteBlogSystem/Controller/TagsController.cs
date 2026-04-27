@@ -18,16 +18,25 @@ namespace CuteBlogSystem.Controller
             _tagService = tagService;
         }
 
-        [HttpGet]
+        // 获取所有标签
+        [HttpGet("all")]
         public async Task<IActionResult> GetAllTags()
         {
             ApiResponse response = await _tagService.GetAllTagsAsync();
             return ReturnResponse(response);
         }
 
+        // 根据分类获取标签
+        [HttpGet("category/{categoryId}")]
+        public async Task<IActionResult> GetTagsByCategoryId([FromRoute] int categoryId)
+        {
+            ApiResponse response = await _tagService.GetTagsByCategoryIdAsync(categoryId);
+            return ReturnResponse(response);
+        }
+
         [Authorize(Roles = "Admin")]
         [HttpPost]
-        public async Task<IActionResult> CreateTag([FromBody] Tag tag)
+        public async Task<IActionResult> CreateTag([FromBody] GetTagDTO tag)
         {
             ApiResponse response = await _tagService.AddTagAsync(tag);
             return ReturnResponse(response);

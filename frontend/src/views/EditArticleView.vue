@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getArticleByIdApi, getArticlesApi, updateArticleApi } from "../api/articles";
@@ -45,7 +45,7 @@ async function loadAll() {
       .map((name) => tags.value.find((t) => t.name === name)?.id)
       .filter(Boolean);
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "加载失败";
+    message.value = err?.payload?.message || err.message || "鍔犺浇澶辫触";
   } finally {
     loading.value = false;
   }
@@ -63,10 +63,10 @@ async function submit() {
       categoryId: Number(form.categoryId),
       tagIds: form.tagIds.map(Number)
     });
-    message.value = "更新成功";
+    message.value = "鏇存柊鎴愬姛";
     setTimeout(() => router.push("/profile"), 700);
   } catch (err) {
-    message.value = err?.payload?.message || err.message || "更新失败";
+    message.value = err?.payload?.message || err.message || "鏇存柊澶辫触";
   } finally {
     loading.value = false;
   }
@@ -77,36 +77,35 @@ onMounted(loadAll);
 
 <template>
   <section class="panel">
-    <h2>编辑文章</h2>
-    <p v-if="message" :class="message.includes('成功') ? 'ok' : 'error'">{{ message }}</p>
+    <h2>缂栬緫鏂囩珷</h2>
 
     <form class="form-grid" @submit.prevent="submit">
       <label>
-        标题
+        鏍囬
         <input v-model.trim="form.title" required />
       </label>
       <label>
-        摘要
+        鎽樿
         <textarea v-model="form.summary" required />
       </label>
       <label>
-        正文
+        姝ｆ枃
         <textarea v-model="form.content" class="large" required />
       </label>
       <label>
-        分类
+        鍒嗙被
         <select v-model="form.categoryId" required>
-          <option value="">请选择分类</option>
+          <option value="">璇烽€夋嫨鍒嗙被</option>
           <option v-for="c in categories" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
         </select>
       </label>
       <label>
-        标签（多选）
+        鏍囩锛堝閫夛級
         <select v-model="form.tagIds" multiple>
           <option v-for="t in tags" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </label>
-      <button class="btn solid" :disabled="loading">{{ loading ? "保存中..." : "保存修改" }}</button>
+      <button class="btn solid" :disabled="loading">{{ loading ? "淇濆瓨涓?.." : "淇濆瓨淇敼" }}</button>
     </form>
   </section>
 </template>

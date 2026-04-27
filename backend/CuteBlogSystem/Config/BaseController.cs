@@ -29,9 +29,15 @@ namespace CuteBlogSystem.Config
 
                 ResponseCode.FileMissing => StatusCodes.Status400BadRequest,
                 ResponseCode.FileTooLarge => StatusCodes.Status413PayloadTooLarge,
+                ResponseCode.FileProcessingFailed => StatusCodes.Status500InternalServerError,
                 ResponseCode.InvalidFileType => StatusCodes.Status400BadRequest,
                 ResponseCode.InvalidFileContent => StatusCodes.Status400BadRequest,
                 ResponseCode.InvalidInput => StatusCodes.Status400BadRequest,
+
+                ResponseCode.TempCoverUrlInvalid => StatusCodes.Status400BadRequest,
+                ResponseCode.TempCoverNotFound => StatusCodes.Status404NotFound,
+                ResponseCode.TempQuotaExceeded => StatusCodes.Status400BadRequest,
+                ResponseCode.TempCoverMoveFailed => StatusCodes.Status500InternalServerError,
 
                 ResponseCode.UpdateFailed => StatusCodes.Status500InternalServerError,
                 ResponseCode.UploadFailed => StatusCodes.Status500InternalServerError,

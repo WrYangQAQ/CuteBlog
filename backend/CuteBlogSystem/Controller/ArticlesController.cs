@@ -5,6 +5,7 @@ using CuteBlogSystem.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 
 
@@ -67,9 +68,16 @@ namespace CuteBlogSystem.Controller
         [Authorize]
         [HttpPost("cover")]
         [Consumes("multipart/form-data")]
+        [EnableRateLimiting("CoverUploadPolicy")]
         public async Task<IActionResult> UploadArticleCover([FromForm] UploadImageRequest request)
         {
-            ApiResponse response = await _articleService.UploadArticleCoverAsync(request.Image);
+            bool success = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out int userId);
+            if(!success)
+            {
+                _logger.LogWarning("用户未认证，无法上传文章封面");
+                return ReturnResponse(new ApiResponse(false, "用户未认证", code: ResponseCode.Unauthorized));
+            }
+            ApiResponse response = await _articleService.UploadArticleCoverAsync(request.Image,userId);
             return ReturnResponse(response);
         }
 

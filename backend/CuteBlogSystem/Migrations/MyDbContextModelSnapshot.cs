@@ -182,11 +182,16 @@ namespace CuteBlogSystem.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
 
                     b.ToTable("Tags");
                 });
@@ -324,6 +329,17 @@ namespace CuteBlogSystem.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("CuteBlogSystem.Entity.Tag", b =>
+                {
+                    b.HasOne("CuteBlogSystem.Entity.Category", "Category")
+                        .WithMany("Tags")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+                });
+
             modelBuilder.Entity("CuteBlogSystem.Entity.Article", b =>
                 {
                     b.Navigation("ArticleLikes");
@@ -336,6 +352,8 @@ namespace CuteBlogSystem.Migrations
             modelBuilder.Entity("CuteBlogSystem.Entity.Category", b =>
                 {
                     b.Navigation("Articles");
+
+                    b.Navigation("Tags");
                 });
 
             modelBuilder.Entity("CuteBlogSystem.Entity.Comment", b =>

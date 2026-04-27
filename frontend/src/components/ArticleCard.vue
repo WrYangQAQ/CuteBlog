@@ -1,6 +1,7 @@
-<script setup>
+﻿<script setup>
 import { computed } from "vue";
 import { formatDate, toAbsoluteAsset } from "../utils/asset";
+import { Eye, Heart } from "lucide-vue-next";
 
 const props = defineProps({
   article: {
@@ -20,8 +21,8 @@ const cover = computed(() => toAbsoluteAsset(props.article.coverUrl));
       <p class="summary"><span class="summary-prefix">摘要：</span>{{ article.summary }}</p>
       <div class="meta">
         <span>{{ article.categoryName }}</span>
-        <span>👀 {{ article.viewCount }}</span>
-        <span>❤ {{ article.likeCount }}</span>
+        <span><Eye :size="14" class="meta-icon" /> {{ article.viewCount }}</span>
+        <span><Heart :size="14" class="meta-icon" /> {{ article.likeCount }}</span>
         <span>{{ formatDate(article.createdAt) }}</span>
       </div>
       <div class="tags">
@@ -30,3 +31,5 @@ const cover = computed(() => toAbsoluteAsset(props.article.coverUrl));
     </div>
   </article>
 </template>
+
+
