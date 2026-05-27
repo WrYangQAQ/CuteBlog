@@ -105,5 +105,33 @@ namespace CuteBlogSystem.Repository
         {
             return await _dbContext.Tags.Where(t => t.CategoryId == categoryId).ToListAsync();
         }
+
+        // 根据标签id获取文章数量
+        public async Task<int> GetArticleCountByTagIdAsync(int tagId)
+        {
+            int count = await _dbContext.ArticleTags.CountAsync(at => at.TagId == tagId);
+            return count;
+        }
+
+        // 根据标签名获取对应标签id
+        public async Task<int?> GetTagIdByTagname(string tagName)
+        {
+            var tag = await _dbContext.Tags.FirstOrDefaultAsync(t => t.Name == tagName);
+            return tag?.Id;
+        }
+
+        // 根据标签id获取标签名（单次查询）
+        public async Task<string?> GetTagNamesByIdsAsync(int tagId)
+        {
+            var tag = await _dbContext.Tags.FindAsync(tagId);
+            return tag?.Name;
+        }
+
+        // 根据标签id获取标签名（批量查询）
+        public async Task<List<string>> GetTagNamesByIdsAsync(List<int> tagIds)
+        {
+            var tags = await _dbContext.Tags.Where(t => tagIds.Contains(t.Id)).ToListAsync();
+            return tags.Select(t => t.Name).ToList();
+        }
     }
 }

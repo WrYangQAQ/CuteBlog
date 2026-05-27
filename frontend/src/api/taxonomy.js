@@ -24,6 +24,10 @@ export function getTagsByCategoryApi(categoryId) {
   return http.get(`/api/Tags/category/${categoryId}`);
 }
 
+export function getTagArticleCountApi(tagId) {
+  return http.get(`/api/Tags/articleCounts/${tagId}`);
+}
+
 export function createTagApi(payload) {
   return http.post("/api/Tags", payload);
 }

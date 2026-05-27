@@ -111,6 +111,7 @@ builder.Services.AddScoped<TagService>();
 builder.Services.AddScoped<AdminStatisticsService>();
 builder.Services.AddScoped<AiChatService>();
 builder.Services.AddScoped<AiAgentService>();
+builder.Services.AddScoped<AiPlannerService>();
 
 // 注册JwtUtil服务
 builder.Services.AddScoped<JwtUtil>();

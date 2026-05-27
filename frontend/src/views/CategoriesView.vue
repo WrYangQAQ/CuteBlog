@@ -5,7 +5,7 @@ import { getArticlesApi } from "../api/articles";
 import { getCategoriesApi } from "../api/taxonomy";
 import bannerCategory from "../assets/images/banner-category.png";
 import decorationShark from "../assets/images/decoration-shark.png";
-import { Grid2X2, FileText } from "lucide-vue-next";
+import { LayoutGrid, FileText } from "lucide-vue-next";
 
 const router = useRouter();
 const loading = ref(false);
@@ -61,7 +61,7 @@ onMounted(loadData);
   <section class="page-stack">
     <header class="sea-hero mini" :style="{ backgroundImage: `url(${bannerCategory})` }">
       <div class="hero-copy">
-        <h1>分类 <Grid2X2 :size="28" class="title-icon" /></h1>
+        <h1>分类 <LayoutGrid :size="28" class="title-icon" /></h1>
         <p class="hero-sub">探索不同主题的精彩内容</p>
       </div>
       <img class="hero-avatar" :src="decorationShark" alt="category decoration" />

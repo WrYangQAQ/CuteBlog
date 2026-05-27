@@ -188,5 +188,14 @@ namespace CuteBlogSystem.Controller
             ApiResponse response = await _articleService.GetRecommendArticlesAsync();
             return ReturnResponse(response);
         }
+
+        // 根据分类获取文章列表
+        [Authorize]
+        [HttpGet("category/{categoryId}")]
+        public async Task<IActionResult> GetArticleByCategory([FromRoute] int categoryId)
+        {
+            ApiResponse response = await _articleService.GetArticlesByCategoryIdAsync(categoryId);
+            return ReturnResponse(response);
+        }
     }
 }

@@ -1,7 +1,8 @@
 ﻿<script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import { marked } from "marked";
-import { useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
+import DOMPurify from "dompurify";
+import RichTextEditor from "../components/RichTextEditor.vue";
 import { publishArticleApi, uploadArticleCoverApi } from "../api/articles";
 import { getCategoriesApi, getTagsByCategoryApi } from "../api/taxonomy";
 import { showError, showSuccess } from "../stores/feedback";
@@ -14,6 +15,7 @@ const loading = ref(false);
 const uploadingCover = ref(false);
 const loadingTags = ref(false);
 const coverUploadSuccess = ref(false);
+const allowLeave = ref(false);
 const categories = ref([]);
 const tags = ref([]);
 
@@ -22,29 +24,46 @@ const form = reactive({
   summary: "",
   content: "",
   categoryId: "",
-  selectedTagNames: [],
+  selectedTagIds: [],
   coverUrl: ""
 });
 
-const stats = computed(() => ({
-  words: (form.content || "").trim().length,
-  minutes: Math.max(1, Math.ceil((form.content || "").trim().length / 350)),
-  paragraphs: (form.content || "").split(/\n+/).filter(Boolean).length,
-  tags: form.selectedTagNames.length
-}));
+function plainTextFromHtml(html) {
+  const text = DOMPurify.sanitize(html || "", { ALLOWED_TAGS: [] });
+  return text.replace(/\s+/g, " ").trim();
+}
 
-const markdownPreviewHtml = computed(() => {
-  if (!form.content?.trim()) {
-    return '<p class="hint">在左侧输入 Markdown 或纯文本，这里会实时预览效果。</p>';
-  }
-  return marked.parse(form.content, {
-    gfm: true,
-    breaks: true
-  });
-});
+const stats = computed(() => ({
+  words: plainTextFromHtml(form.content).length,
+  minutes: Math.max(1, Math.ceil(plainTextFromHtml(form.content).length / 350)),
+  paragraphs: plainTextFromHtml(form.content).split(/\s+/).filter(Boolean).length ? Math.max(1, (form.content.match(/<p|<h[1-6]|<li/g) || []).length) : 0,
+  tags: form.selectedTagIds.length
+}));
 
 const isBusy = computed(() => loading.value || uploadingCover.value || loadingTags.value);
 const coverPreviewUrl = computed(() => (form.coverUrl ? toAbsoluteAsset(form.coverUrl) : ""));
+const hasContent = computed(() => Boolean(plainTextFromHtml(form.content)));
+const hasDraftContent = computed(() => {
+  return Boolean(
+    form.title.trim() ||
+      form.summary.trim() ||
+      plainTextFromHtml(form.content) ||
+      form.categoryId ||
+      form.selectedTagIds.length ||
+      form.coverUrl
+  );
+});
+
+function confirmLeave() {
+  if (allowLeave.value || !hasDraftContent.value) return true;
+  return window.confirm("本网站不保存内容，确定要离开吗？");
+}
+
+function handleBeforeUnload(event) {
+  if (allowLeave.value || !hasDraftContent.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
 
 async function loadMeta() {
   try {
@@ -58,7 +77,7 @@ async function loadMeta() {
 async function loadTagsByCategory(categoryId) {
   if (!categoryId) {
     tags.value = [];
-    form.selectedTagNames = [];
+    form.selectedTagIds = [];
     return;
   }
 
@@ -67,11 +86,11 @@ async function loadTagsByCategory(categoryId) {
     const res = await getTagsByCategoryApi(categoryId);
     tags.value = res.data || [];
 
-    const validTagNames = new Set(tags.value.map((t) => t.name));
-    form.selectedTagNames = form.selectedTagNames.filter((name) => validTagNames.has(name));
+    const validTagIds = new Set(tags.value.map((t) => Number(t.id)));
+    form.selectedTagIds = form.selectedTagIds.filter((id) => validTagIds.has(Number(id)));
   } catch {
     tags.value = [];
-    form.selectedTagNames = [];
+    form.selectedTagIds = [];
   } finally {
     loadingTags.value = false;
   }
@@ -84,13 +103,14 @@ watch(
   }
 );
 
-function toggleTag(name) {
+function toggleTag(tagId) {
   if (!form.categoryId) return;
+  const id = Number(tagId);
 
-  if (form.selectedTagNames.includes(name)) {
-    form.selectedTagNames = form.selectedTagNames.filter((i) => i !== name);
+  if (form.selectedTagIds.includes(id)) {
+    form.selectedTagIds = form.selectedTagIds.filter((i) => i !== id);
   } else {
-    form.selectedTagNames = [...form.selectedTagNames, name];
+    form.selectedTagIds = [...form.selectedTagIds, id];
   }
 }
 
@@ -114,6 +134,11 @@ async function uploadCover(event) {
 }
 
 async function submit() {
+  if (!hasContent.value) {
+    showError("请先填写文章内容", "参数错误");
+    return;
+  }
+
   if (!form.coverUrl) {
     showError("请先上传封面图片", "参数错误");
     return;
@@ -129,11 +154,12 @@ async function submit() {
     await publishArticleApi({
       title: form.title,
       summary: form.summary,
-      content: form.content,
+      content: DOMPurify.sanitize(form.content),
       categoryId: Number(form.categoryId),
-      tagNames: form.selectedTagNames,
+      tagIds: form.selectedTagIds,
       coverUrl: form.coverUrl
     });
+    allowLeave.value = true;
     showSuccess("文章发布成功");
     setTimeout(() => router.push("/articles"), 600);
   } catch {
@@ -142,7 +168,18 @@ async function submit() {
   }
 }
 
-onMounted(loadMeta);
+onMounted(() => {
+  loadMeta();
+  window.addEventListener("beforeunload", handleBeforeUnload);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+});
+
+onBeforeRouteLeave(() => {
+  return confirmLeave();
+});
 </script>
 
 <template>
@@ -168,18 +205,10 @@ onMounted(loadMeta);
             <textarea v-model="form.summary" maxlength="200" placeholder="可选，文章摘要" />
           </label>
 
-          <label>
-            文章内容 *
-            <div class="md-editor-grid">
-              <textarea
-                v-model="form.content"
-                class="large md-input"
-                required
-                placeholder="开始编写你的文章... 支持 Markdown 语法"
-              />
-              <div class="md-live-preview markdown-body" v-html="markdownPreviewHtml"></div>
-            </div>
-          </label>
+          <div class="form-field">
+            <span class="field-label">文章内容 *</span>
+            <RichTextEditor v-model="form.content" placeholder="开始编写你的文章，选中文字后也可以继续调整格式..." />
+          </div>
 
           <label>
             文章封面
@@ -217,8 +246,8 @@ onMounted(loadMeta);
                 :key="tag.id"
                 type="button"
                 class="tag"
-                :class="{ selected: form.selectedTagNames.includes(tag.name) }"
-                @click="toggleTag(tag.name)"
+                :class="{ selected: form.selectedTagIds.includes(Number(tag.id)) }"
+                @click="toggleTag(tag.id)"
               >
                 {{ tag.name }}
               </button>

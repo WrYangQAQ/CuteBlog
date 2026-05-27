@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { getMyArticlesApi, updateProfileApi, uploadAvatarApi } from "../api/auth";
-import { getArticlesApi } from "../api/articles";
+import { deleteArticleApi, getArticlesApi } from "../api/articles";
 import { toAbsoluteAsset } from "../utils/asset";
 import bannerHome from "../assets/images/banner-home.png";
 import decorationShark from "../assets/images/decoration-shark.png";
@@ -68,6 +68,22 @@ async function uploadAvatar(event) {
 
 function goDetail(id) {
   router.push(`/articles/${id}`);
+}
+
+function editArticle(id) {
+  router.push(`/articles/${id}/edit`);
+}
+
+async function deleteArticle(id) {
+  if (!confirm("确定删除这篇文章吗？")) return;
+
+  try {
+    await deleteArticleApi(id);
+    showSuccess("文章删除成功");
+    await loadData();
+  } catch (err) {
+    message.value = err?.payload?.message || err.message || "删除失败";
+  }
 }
 
 function logout() {
@@ -154,9 +170,12 @@ onMounted(loadData);
         <section class="panel side-panel">
           <h2>我发布的文章</h2>
           <ul class="rank-list">
-            <li v-for="item in myArticles" :key="item.id" @click="goDetail(item.id)">
-              <span>{{ item.title }}</span>
-              <b>→</b>
+            <li v-for="item in myArticles" :key="item.id" class="managed-article-item">
+              <span class="managed-article-title" @click="goDetail(item.id)">{{ item.title }}</span>
+              <span class="managed-article-actions">
+                <button class="btn ghost mini" type="button" @click="editArticle(item.id)">编辑</button>
+                <button class="btn danger mini" type="button" @click="deleteArticle(item.id)">删除</button>
+              </span>
             </li>
           </ul>
         </section>

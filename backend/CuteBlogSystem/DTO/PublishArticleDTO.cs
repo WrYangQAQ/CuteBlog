@@ -8,21 +8,20 @@ namespace CuteBlogSystem.DTO
         public string Summary { get; set; }
         public string Content { get; set; }
         public int CategoryId { get; set; }
-        public List<string> TagNames { get; set; } = new List<string>();
+        public List<int> TagIds { get; set; } = new List<int>();
 
         [Required(ErrorMessage = "封面图片URL不能为空")]
         public string CoverUrl { get; set; }
         public PublishArticleDTO() { }
 
-        public PublishArticleDTO(string title, string summary, string content, int categoryId, List<string> tagNames, string coverUrl)
+        public PublishArticleDTO(string title, string summary, string content, int categoryId, List<int> tagIds, string coverUrl)
         {
             Title = title;
             Summary = summary;
             Content = content;
             CategoryId = categoryId;
-            TagNames = tagNames;
+            TagIds = tagIds;
             CoverUrl = coverUrl;
-
         }
     }
 }

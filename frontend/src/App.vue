@@ -5,7 +5,7 @@ import FeedbackPopup from "./components/FeedbackPopup.vue";
 import {
   Home,
   FileText,
-  Grid2X2,
+  LayoutGrid,
   Tag,
   PlusCircle,
   Archive,
@@ -27,7 +27,7 @@ const isAdmin = computed(() => authStore.isAdmin);
 const menuItems = computed(() => [
   { to: "/", text: "首页", icon: Home },
   { to: "/articles", text: "文章", icon: FileText },
-  { to: "/categories", text: "分类", icon: Grid2X2 },
+  { to: "/categories", text: "分类", icon: LayoutGrid },
   { to: "/tags", text: "标签", icon: Tag },
   { to: "/publish", text: "发布", icon: PlusCircle },
   { to: "/archive", text: "归档", icon: Archive },

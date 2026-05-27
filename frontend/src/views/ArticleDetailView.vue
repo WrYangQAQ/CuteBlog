@@ -1,12 +1,29 @@
 ﻿<script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import csharp from "highlight.js/lib/languages/csharp";
+import css from "highlight.js/lib/languages/css";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import xml from "highlight.js/lib/languages/xml";
 import { ThumbsUp } from "lucide-vue-next";
 import { getArticleByIdApi, readArticleApi, toggleArticleLikeApi } from "../api/articles";
 import { getCommentsApi, publishCommentApi } from "../api/comments";
 import { getProfileApi } from "../api/auth";
 import { formatDate, toAbsoluteAsset } from "../utils/asset";
+
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("xml", xml);
 
 const route = useRoute();
 const articleId = computed(() => Number(route.params.id));
@@ -18,8 +35,49 @@ const comments = ref([]);
 const newComment = ref("");
 const enterTime = ref(Date.now());
 const liked = ref(false);
+const articleBody = ref(null);
 
-const htmlContent = computed(() => marked.parse(article.value?.content || ""));
+function looksLikeHtml(content) {
+  const trimmed = (content || "").trim();
+  if (!trimmed) return false;
+  const plainText = trimmed.replace(/<[^>]+>/g, " ");
+  const markdownSignals = /(^|\s)(#{1,6}\s|```|[-*]\s|\d+\.\s|>\s)/.test(plainText);
+  if (markdownSignals) return false;
+  return /^<(p|h[1-6]|ul|ol|li|blockquote|pre|code|div|span|img|table|figure|hr|br)\b/i.test(trimmed);
+}
+
+const htmlContent = computed(() => {
+  const content = article.value?.content || "";
+  const html = looksLikeHtml(content) ? content : marked.parse(content);
+  return DOMPurify.sanitize(html);
+});
+
+function normalizeCodeLanguage(block) {
+  const languageClass = [...block.classList].find((item) => item.startsWith("language-"));
+  if (!languageClass) return;
+  const language = languageClass.replace("language-", "").toLowerCase();
+  const aliases = {
+    "c#": "csharp",
+    cs: "csharp",
+    js: "javascript",
+    html: "xml",
+    vue: "xml",
+    shell: "bash",
+    sh: "bash"
+  };
+  const normalized = aliases[language];
+  if (normalized) block.classList.add(`language-${normalized}`);
+}
+
+function highlightCodeBlocks() {
+  nextTick(() => {
+    articleBody.value?.querySelectorAll("pre code").forEach((block) => {
+      normalizeCodeLanguage(block);
+      block.removeAttribute("data-highlighted");
+      hljs.highlightElement(block);
+    });
+  });
+}
 
 async function loadDetail() {
   loading.value = true;
@@ -83,6 +141,8 @@ onMounted(async () => {
   await loadDetail();
 });
 
+watch(htmlContent, highlightCodeBlocks, { flush: "post" });
+
 onBeforeUnmount(reportReadDuration);
 </script>
 
@@ -108,7 +168,7 @@ onBeforeUnmount(reportReadDuration);
           </button>
         </div>
 
-        <article class="markdown-body" v-html="htmlContent"></article>
+        <article ref="articleBody" class="markdown-body" v-html="htmlContent"></article>
 
         <section class="comment-section">
           <h3>评论区（{{ comments.length }}）</h3>

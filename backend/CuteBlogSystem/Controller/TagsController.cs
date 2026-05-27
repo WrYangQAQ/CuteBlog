@@ -57,5 +57,13 @@ namespace CuteBlogSystem.Controller
             ApiResponse response = await _tagService.DeleteTagAsync(tagId);
             return ReturnResponse(response);
         }
+
+        [Authorize]
+        [HttpGet("articleCounts/{tagId}")]
+        public async Task<IActionResult> GetArticlesCountsByTagIdAsync([FromRoute] int tagId)
+        {
+            ApiResponse response = await _tagService.GetArticleCountByTagIdAsync(tagId);
+            return ReturnResponse(response);
+        }
     }
 }

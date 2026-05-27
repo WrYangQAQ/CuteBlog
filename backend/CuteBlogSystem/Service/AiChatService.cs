@@ -22,7 +22,7 @@ namespace CuteBlogSystem.Service
                 throw new ArgumentException("用户消息不能为空", nameof(userMessage));
             }
 
-            var messages = AiChatHelper.BuildChatMessages("你是一个专门讲解 ASP.NET Core 和 Agent 开发的老师，回答清晰、准确、简洁。", 
+            var messages = AiChatHelper.BuildChatMessages("你是一个专门讲解 ASP.NET Core 和 Agent 开发的老师，回答清晰、准确、详细。", 
                                                           userMessage);
 
             _logger.LogInformation("开始调用 AI，用户消息：{Message}", userMessage);

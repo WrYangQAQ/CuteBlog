@@ -153,5 +153,17 @@ namespace CuteBlogSystem.Repository
                     .ThenInclude(at => at.Tag)
                 .ToListAsync();
         }
+
+        // 根据ID列表获取对应的文章列表
+        public async Task<List<Article>> GetArticlesByIdsAsync(List<int> articleIds)
+        {
+            return await _dbContext.Articles
+                .Where(a => articleIds.Contains(a.Id))
+                .Include(a => a.Category)
+                .Include(a => a.User)
+                .Include(a => a.ArticleTags)
+                    .ThenInclude(at => at.Tag)
+                .ToListAsync();
+        }
     }
 }

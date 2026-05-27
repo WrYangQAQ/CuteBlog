@@ -11,7 +11,7 @@ namespace CuteBlogSystem.Service
         private readonly ArticleRepository _articleRepository;
         private readonly ILogger<TagService> _logger;
         private readonly CategoryRepository _categoryRepository;
-        public TagService(TagRepository tagRepository, 
+        public TagService(TagRepository tagRepository,
             ArticleRepository articleRepository,
             ILogger<TagService> logger,
             CategoryRepository categoryRepository)
@@ -65,7 +65,7 @@ namespace CuteBlogSystem.Service
             {
                 return new ApiResponse(false, "分类不存在！");
             }
-    
+
             bool success = await _tagRepository.AddTagAsync(tag);
             if (success)
             {
@@ -95,7 +95,7 @@ namespace CuteBlogSystem.Service
                     await _articleRepository.UpdateArticleAsync(article);
                 }
             }
-            
+
             bool success = await _tagRepository.DeleteTagAsync(tagId);
             if (success)
             {
@@ -112,7 +112,7 @@ namespace CuteBlogSystem.Service
         {
             try
             {
-                if(updatedTag.Id != tagId)
+                if (updatedTag.Id != tagId)
                 {
                     return new ApiResponse(false, "标签ID不匹配！");
                 }
@@ -143,6 +143,13 @@ namespace CuteBlogSystem.Service
                 _logger.LogError($"标签更新失败！\nex.message:{ex.Message}");
                 return new ApiResponse(false, "标签更新失败！"); ;
             }
+        }
+
+        // 根据 Tag Id 获取标签对应的文章数量
+        public async Task<ApiResponse> GetArticleCountByTagIdAsync(int tagId)
+        {
+            int count = await _tagRepository.GetArticleCountByTagIdAsync(tagId);
+            return new ApiResponse(true, "获取标签对应的文章数量成功！", count);
         }
     }
 }

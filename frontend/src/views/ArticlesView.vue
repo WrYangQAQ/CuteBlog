@@ -1,7 +1,8 @@
 ﻿<script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { getArticlesApi, searchArticlesApi } from "../api/articles";
+import { getArticlesApi, getArticlesByCategoryApi, searchArticlesApi } from "../api/articles";
+import { getCategoriesApi } from "../api/taxonomy";
 import { toAbsoluteAsset } from "../utils/asset";
 import bannerArticle from "../assets/images/banner-article.png";
 import decorationShark from "../assets/images/decoration-shark.png";
@@ -11,18 +12,30 @@ const router = useRouter();
 const loading = ref(false);
 const message = ref("");
 const articles = ref([]);
+const allArticles = ref([]);
+const categories = ref([]);
+const selectedCategoryId = ref(0);
 const searchForm = reactive({ keyword: "", articleTag: [] });
 
 const categoryTabs = computed(() => {
   const map = new Map();
-  (articles.value || []).forEach((a) => {
+  (allArticles.value || []).forEach((a) => {
     const key = a.categoryName || "未分类";
     map.set(key, (map.get(key) || 0) + 1);
   });
+  const categoryItems = (categories.value || []).map((item) => ({
+    id: item.id,
+    name: item.name,
+    count: map.get(item.name) || 0
+  }));
   return [
-    { name: "全部文章", count: articles.value.length },
-    ...[...map.entries()].map(([name, count]) => ({ name, count }))
+    { id: 0, name: "全部文章", count: allArticles.value.length },
+    ...categoryItems
   ];
+});
+
+const selectedCategoryName = computed(() => {
+  return categoryTabs.value.find((tab) => tab.id === selectedCategoryId.value)?.name || "";
 });
 
 const hotArticles = computed(() => {
@@ -46,8 +59,10 @@ async function loadData() {
   loading.value = true;
   message.value = "";
   try {
-    const res = await getArticlesApi();
-    articles.value = res.data || [];
+    const [articleRes, categoryRes] = await Promise.all([getArticlesApi(), getCategoriesApi()]);
+    allArticles.value = articleRes.data || [];
+    articles.value = allArticles.value;
+    categories.value = categoryRes.data || [];
   } catch (err) {
     message.value = err?.payload?.message || err.message || "加载失败";
   } finally {
@@ -59,10 +74,34 @@ async function search() {
   loading.value = true;
   message.value = "";
   try {
-    const res = await searchArticlesApi(searchForm);
+    const res = await searchArticlesApi({
+      ...searchForm,
+      category: selectedCategoryId.value ? selectedCategoryName.value : ""
+    });
     articles.value = res.data || [];
   } catch (err) {
     message.value = err?.payload?.message || err.message || "搜索失败";
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function selectCategory(tab) {
+  selectedCategoryId.value = tab.id;
+  message.value = "";
+
+  if (!tab.id) {
+    articles.value = allArticles.value;
+    return;
+  }
+
+  loading.value = true;
+  try {
+    const res = await getArticlesByCategoryApi(tab.id);
+    articles.value = res.data || [];
+  } catch (err) {
+    articles.value = [];
+    message.value = err?.payload?.message || err.message || "分类文章加载失败";
   } finally {
     loading.value = false;
   }
@@ -88,7 +127,13 @@ onMounted(loadData);
     <div class="content-grid">
       <section class="panel">
         <div class="tabs-row">
-          <button v-for="tab in categoryTabs" :key="tab.name" class="tab-pill">
+          <button
+            v-for="tab in categoryTabs"
+            :key="tab.id"
+            class="tab-pill"
+            :class="{ active: selectedCategoryId === tab.id }"
+            @click="selectCategory(tab)"
+          >
             {{ tab.name }} <small>{{ tab.count }}</small>
           </button>
         </div>
@@ -111,12 +156,16 @@ onMounted(loadData);
           </article>
         </div>
         <p v-if="loading" class="hint">加载中...</p>
+        <p v-else-if="!articles.length" class="hint">暂无文章</p>
+        <p v-if="message" class="error">{{ message }}</p>
       </section>
 
       <aside class="right-column">
         <section class="panel side-panel">
-          <input v-model.trim="searchForm.keyword" placeholder="搜索文章..." />
-          <button class="btn solid" style="margin-top:10px" @click="search">搜索</button>
+          <div class="search-row">
+            <input v-model.trim="searchForm.keyword" placeholder="搜索文章..." @keyup.enter="search" />
+            <button class="btn solid" @click="search">搜索</button>
+          </div>
         </section>
 
         <section class="panel side-panel">

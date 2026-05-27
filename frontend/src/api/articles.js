@@ -34,6 +34,13 @@ export function searchArticlesApi(search = {}) {
   }));
 }
 
+export function getArticlesByCategoryApi(categoryId) {
+  return http.get(`/api/Articles/category/${categoryId}`).then((res) => ({
+    ...res,
+    data: filterMessageBoardArticles(res.data)
+  }));
+}
+
 export function getArticleByIdApi(articleId) {
   return http.get(`/api/Articles/${articleId}`);
 }

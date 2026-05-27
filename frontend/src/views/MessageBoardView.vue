@@ -66,7 +66,7 @@ onMounted(loadData);
         <div class="panel inner" style="margin-top: 14px">
           <h3>留下你的留言</h3>
           <textarea v-model="content" maxlength="500" placeholder="说点什么吧..." />
-          <div class="action-row" style="margin-top: 8px">
+          <div class="message-actions">
             <button class="btn solid" @click="submit">发送留言</button>
           </div>
         </div>
