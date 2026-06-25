@@ -1,9 +1,10 @@
-﻿using CuteBlogSystem.DTO;
+﻿using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
-using CuteBlogSystem.Config;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 using System.Reflection.Metadata.Ecma335;
 
 namespace CuteBlogSystem.Service
@@ -48,14 +49,10 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层获取文章列表
                 List<Article> articles = await _articleRepository.GetArticlesAsync();
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
 
                 // 将文章列表转换为 DTO
-                for (int i = 0; i < articles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
+                var articleListDTOs = articles.Select(article => 
+                    new GetArticleListDTO(article)).ToList();
 
                 // 对文章按发布时间进行降序排序
                 articleListDTOs = articleListDTOs.OrderByDescending(a => a.CreatedAt).ToList();
@@ -80,17 +77,13 @@ namespace CuteBlogSystem.Service
             try
             {
                 // 调用仓储层，根据 SearchArticleDTO 查询文章列表
-                List<Article> articles = await _articleRepository.SearchArticlesAsync(searchArticleDTO.Keyword,
-                                                                                      searchArticleDTO.ArticleTag,
-                                                                                      searchArticleDTO.Category);
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
+                List<Article> articles = await _articleRepository.SearchArticlesAsync(
+                    searchArticleDTO.Keyword,
+                    searchArticleDTO.ArticleTag,
+                    searchArticleDTO.Category);
 
                 // 将文章列表转换为 DTO
-                for (int i = 0; i < articles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
+                var articleListDTOs = articles.Select(article => new GetArticleListDTO(article)).ToList();
 
                 // 返回成功响应
                 return new ApiResponse(true, "搜索文章成功！", articleListDTOs);
@@ -407,7 +400,6 @@ namespace CuteBlogSystem.Service
             }
         }
 
-
         // 编辑文章
         public async Task<ApiResponse> UpdateArticleContentAsync(int articleId, UpdateArticleDTO updateArticleDTO, int userId)
         {
@@ -511,13 +503,10 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层获取置顶文章列表
                 List<Article> topArticles = await _articleRepository.GetTopArticlesAsync();
-                List<GetArticleListDTO> topArticleDTOs = new List<GetArticleListDTO>();
+                
                 // 将置顶文章列表转换为 DTO
-                for (int i = 0; i < topArticles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(topArticles[i]);
-                    topArticleDTOs.Add(articleListDTO);
-                }
+                var topArticleDTOs = topArticles.Select(article =>  new GetArticleListDTO(article));
+
                 // 返回成功响应
                 return new ApiResponse(true, "获取置顶文章列表成功！", topArticleDTOs);
             }
@@ -564,14 +553,10 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层获取推荐文章列表
                 List<Article> recommendArticles = await _articleRepository.GetRecommendedArticlesAsync();
-                List<GetArticleListDTO> recommendArticleDTOs = new List<GetArticleListDTO>();
 
                 // 将推荐文章列表转换为 DTO
-                for (int i = 0; i < recommendArticles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(recommendArticles[i]);
-                    recommendArticleDTOs.Add(articleListDTO);
-                }
+                var recommendArticleDTOs = recommendArticles.Select(article => new GetArticleListDTO(article)).ToList();
+
                 // 返回成功响应
                 return new ApiResponse(true, "获取推荐文章列表成功！", recommendArticleDTOs);
             }
@@ -619,13 +604,10 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层获取最新发布的五篇文章
                 List<Article> latestArticles = await _articleRepository.GetLatestArticlesAsync();
-                List<GetArticleListDTO> latestArticleDTOs = new List<GetArticleListDTO>();
+
                 // 将文章列表转换为 DTO
-                for (int i = 0; i < latestArticles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(latestArticles[i]);
-                    latestArticleDTOs.Add(articleListDTO);
-                }
+                var latestArticleDTOs = latestArticles.Select(article => new GetArticleListDTO(article)).ToList();
+
                 // 返回成功响应
                 return new ApiResponse(true, "获取最新发布的五篇文章成功！", latestArticleDTOs);
             }
@@ -653,14 +635,10 @@ namespace CuteBlogSystem.Service
 
                 // 调用仓储层，根据分类名查询文章列表
                 List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
 
                 // 将文章列表转换为 DTO
-                for (int i = 0; i < articles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
+                var articleListDTOs = articles.Select(article => new GetArticleListDTO(article));
+
                 // 返回成功响应
                 return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
             }
@@ -689,16 +667,11 @@ namespace CuteBlogSystem.Service
                 // 调用仓储层，根据分类名查询文章列表
                 List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
 
-                // 对文章列表按发布时间进行降序排序
-                articles = articles.OrderByDescending(a => a.CreatedAt).ToList();
+                // 对文章列表按发布时间进行降序排序，将文章列表转换为 DTO
+                var articleListDTOs = articles
+                    .OrderByDescending(article => article.CreatedAt)
+                    .Select(article => new GetArticleListDTO(article)).Take(count).ToList();
 
-                // 将文章列表转换为 DTO
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
-                for (int i = 0; i < articles.Count && i < count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
                 // 返回成功响应
                 return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
             }
@@ -737,12 +710,8 @@ namespace CuteBlogSystem.Service
                 };
 
                 // 将文章列表转换为 DTO
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
-                for (int i = 0; i < articles.Count && i < count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
+                var articleListDTOs = articles
+                    .Select(article => new GetArticleListDTO(article)).Take(count).ToList();
                 // 返回成功响应
                 return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
             }
@@ -762,13 +731,10 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层，根据分类id查询文章列表
                 List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
+
                 // 将文章列表转换为 DTO
-                for (int i = 0; i < articles.Count; i++)
-                {
-                    GetArticleListDTO articleListDTO = new GetArticleListDTO(articles[i]);
-                    articleListDTOs.Add(articleListDTO);
-                }
+                var articleListDTOs = articles.Select(article => new GetArticleListDTO(article)).ToList();
+
                 // 返回成功响应
                 return new ApiResponse(true, $"根据分类ID'{categoryId}'查询文章列表成功！", articleListDTOs);
             }
@@ -777,7 +743,7 @@ namespace CuteBlogSystem.Service
                 // 记录异常日志
                 _logger.LogError(ex, $"根据分类ID'{categoryId}'查询文章列表失败！\nex.message:{ex.Message}");
                 // 返回失败响应
-                return new ApiResponse(false, $"根据分类ID'{categoryId}'查询文章列表失败！", null);
+                return new ApiResponse(false, $"根据分类ID'{categoryId}'查询文章列表失败！", code: ResponseCode.NotFound);
             }
         }
 
@@ -787,7 +753,7 @@ namespace CuteBlogSystem.Service
             int? tagId = await _tagRepository.GetTagIdByTagname(tagName);
             if (tagId == null)
             {
-                return new ApiResponse(false, $"未找到标签名为'{tagName}'的标签！", null);
+                return new ApiResponse(false, $"未找到标签名为'{tagName}'的标签！", code: ResponseCode.NotFound);
             }
             else
             {
@@ -825,10 +791,10 @@ namespace CuteBlogSystem.Service
         // 根据文章id查询对应标签列表(单次查询文章，批量查询标签)
         public async Task<ApiResponse> GetArticleTagsListByArticleIdAsync(int articleId)
         {
-                       Article article = await _articleRepository.GetArticleByIdAsync(articleId);
+            Article article = await _articleRepository.GetArticleByIdAsync(articleId);
             if (article == null)
             {
-                return new ApiResponse(false, $"未找到ID为{articleId}的文章！", null);
+                return new ApiResponse(false, $"未找到ID为{articleId}的文章！", code: ResponseCode.ArticleNotFound);
             }
             List<int> tagIds = await _articleTagRepository.GetTagIdsByArticleIdAsync(articleId);
             List<string> tagNames = await _tagRepository.GetTagNamesByIdsAsync(tagIds);

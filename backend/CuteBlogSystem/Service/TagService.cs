@@ -26,11 +26,7 @@ namespace CuteBlogSystem.Service
         public async Task<ApiResponse> GetAllTagsAsync()
         {
             List<Tag> tags = await _tagRepository.GetAllTagsAsync();
-            List<GetTagDTO> tagDTOs = tags.Select(t => new GetTagDTO
-            {
-                Name = t.Name,
-                CategoryId = t.CategoryId,
-            }).ToList();
+            List<GetTagDTO> tagDTOs = tags.Select(tag => new GetTagDTO(tag)).ToList();
             if (tagDTOs == null || tagDTOs.Count == 0)
             {
                 return new ApiResponse(false, "没有找到任何标签", code: ResponseCode.NotFound);

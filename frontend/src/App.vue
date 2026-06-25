@@ -10,7 +10,8 @@ import {
   PlusCircle,
   Archive,
   User,
-  MessageCircle
+  MessageCircle,
+  Bot
 } from "lucide-vue-next";
 import logoShark from "./assets/images/logo-shark.png";
 
@@ -31,6 +32,7 @@ const menuItems = computed(() => [
   { to: "/tags", text: "标签", icon: Tag },
   { to: "/publish", text: "发布", icon: PlusCircle },
   { to: "/archive", text: "归档", icon: Archive },
+  { to: "/agent", text: "博客助手", icon: Bot },
   { to: "/profile", text: "关于我", icon: User },
   { to: "/messages", text: "留言板", icon: MessageCircle }
 ]);

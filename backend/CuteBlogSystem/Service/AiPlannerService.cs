@@ -46,17 +46,36 @@ namespace CuteBlogSystem.Service
                    用于根据文章ID获取文章正文。
                    参数：
                    - articleIdFromStep：表示从哪一步的结果中取文章ID
+                   - 当使用 articleId 直接指定文章时，不要再输出 articleIdFromStep。
+                   - 当使用 articleIdFromStep 引用前置步骤时，不要再输出 articleId。
+                   - articleId 和 articleIdFromStep 二选一，不要同时输出。
 
                 3. SummarizeContent
                    用于总结文章正文。
                    参数：
                    - contentFromStep：表示从哪一步的结果中取正文内容
 
-                4. CompareContents
+                4. AnswerQuestionFromContent
+                   用于根据文章正文回答用户提出的具体问题。
+                   参数：
+                   - contentFromStep：正文来自哪一步
+                   - question：用户针对文章提出的具体问题
+
+                5. CompareContents
                    用于对比两篇文章正文。
                    参数：
                    - contentFromStepA：第一篇正文来自哪一步
                    - contentFromStepB：第二篇正文来自哪一步
+
+                6. GetAllCategories
+                   用于获取系统中所有文章分类。
+                   参数：无
+
+                7. ExplainFailureWithSuggestions
+                   用于根据执行失败原因和可用分类，生成面向用户的解释和建议。
+                   参数：
+                   - failureFromStep：失败步骤编号
+                   - categoriesFromStep：分类列表来源步骤编号
 
                 你必须只输出 JSON，不要输出 Markdown，不要输出解释文字。
                 JSON 格式必须严格如下：
@@ -85,6 +104,28 @@ namespace CuteBlogSystem.Service
                 - 如果用户要求总结文章，必须先查询文章，再获取正文，再总结正文。
                 - 如果后续步骤需要使用前面步骤的文章ID，用 articleIdFromStep 表示。
                 - 如果后续步骤需要使用前面步骤的正文，用 contentFromStep 表示。
+                - 如果用户要求“对比”两篇文章，必须先分别查询两篇文章，再分别获取两篇文章正文，最后使用 CompareContents。
+                - 如果用户要求对比“点赞最高”和“浏览量最高”的文章：
+                  第一步使用 SearchArticlesByCategory，sortBy = MostLiked，top = 1。
+                  第二步使用 SearchArticlesByCategory，sortBy = MostViewed，top = 1。
+                  第三步获取第一步文章正文。
+                  第四步获取第二步文章正文。
+                  第五步对比第三步和第四步正文。
+                - 只有用户明确要求“总结、概括、主要讲了什么”时，才使用 SummarizeContent。
+                - 用户针对文章询问具体内容时，例如“有没有介绍变量”“var 是怎么解释的”
+                 “介绍了哪些流程控制语句”，必须使用 AnswerQuestionFromContent。
+                - AnswerQuestionFromContent 前必须先通过 GetArticleContentById 获取文章正文。
+                - question 必须填写用户当前提出的具体问题，不要填写完整上下文或历史摘要。
+
+                意图区分示例：
+                - “这篇文章主要讲了什么？” → SummarizeContent
+                - “总结一下这篇文章” → SummarizeContent
+                - “文章中如何解释 var？” → AnswerQuestionFromContent
+                - “有没有介绍变量？” → AnswerQuestionFromContent
+                - “介绍了哪些流程控制语句？” → AnswerQuestionFromContent
+
+                禁止把具体知识点问答转换成全文总结。
+                只要问题能够针对文章中的某个局部内容作答，就必须使用 AnswerQuestionFromContent。
                 """),
 
                 new(ChatRole.User, userMessage)
@@ -92,8 +133,15 @@ namespace CuteBlogSystem.Service
 
             _logger.LogInformation("Planner 开始生成计划，用户问题：{Message}", userMessage);
 
-            // 调用 AI 获取原始响应
-            var response = await _chatClient.GetResponseAsync(messages);
+            // 调用 AI 获取原始响应，并限制最大 token 数量以控制输出长度
+            var response = await _chatClient.GetResponseAsync
+            (
+                messages,
+                new ChatOptions
+                {
+                    MaxOutputTokens = AgentTokenBudget.PlannerMaxOutputTokens
+                }
+            );
 
             // 提取助手的回复文本
             var planJson = response.Messages

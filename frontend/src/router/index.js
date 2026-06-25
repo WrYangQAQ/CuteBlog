@@ -14,6 +14,7 @@ import CategoriesView from "../views/CategoriesView.vue";
 import TagsView from "../views/TagsView.vue";
 import ArchiveView from "../views/ArchiveView.vue";
 import MessageBoardView from "../views/MessageBoardView.vue";
+import AgentView from "../views/AgentView.vue";
 
 const routes = [
   { path: "/login", name: "login", component: LoginView, meta: { guestOnly: true } },
@@ -22,6 +23,7 @@ const routes = [
   { path: "/articles", name: "articles", component: ArticlesView, meta: { requiresAuth: true } },
   { path: "/categories", name: "categories", component: CategoriesView, meta: { requiresAuth: true } },
   { path: "/tags", name: "tags", component: TagsView, meta: { requiresAuth: true } },
+  { path: "/agent", name: "agent", component: AgentView, meta: { requiresAuth: true } },
   { path: "/archive", name: "archive", component: ArchiveView, meta: { requiresAuth: true } },
   { path: "/messages", name: "messages", component: MessageBoardView, meta: { requiresAuth: true } },
   {

@@ -157,7 +157,7 @@ namespace CuteBlogSystem.Service
                 if (!Directory.Exists(tempDir))
                     return new ApiResponse(true, "临时目录不存在，无需清理", code: ResponseCode.Success);
 
-                DateTime threshold = DateTime.Now.AddMinutes(-30);
+                DateTime threshold = DateTime.UtcNow.AddMinutes(-30);
                 var filesToDelete = new List<string>();
 
                 CollectExpiredFiles(tempDir, threshold, filesToDelete);

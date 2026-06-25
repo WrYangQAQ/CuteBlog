@@ -27,7 +27,7 @@ namespace CuteBlogSystem.DTO
             ViewCount = article.ViewCount;
             LikeCount = article.LikeCount;
             CategoryName = article.Category?.Name ?? "未分类";
-            TagNames = article.ArticleTags.Select(at => at.Tag.Name).ToList();
+            TagNames = article.ArticleTags.Select(at => at.Tag.Name).ToList() ?? new List<string>();
             Id = article.Id;
         }
     }

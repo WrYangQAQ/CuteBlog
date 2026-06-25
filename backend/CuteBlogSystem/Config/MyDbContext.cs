@@ -16,6 +16,11 @@ namespace CuteBlogSystem.Config
         public DbSet<ArticleTag> ArticleTags { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<ArticleLike> ArticleLikes { get; set; }
+        public DbSet<AgentWorkflowLog> AgentWorkflowLogs { get; set; }
+        public DbSet<AgentConversationMemory> AgentConversationMemories { get; set; }
+        public DbSet<AgentConversation> AgentConversations { get; set; }
+        public DbSet<AgentMessage> AgentMessages { get; set; }
+        public DbSet<AgentPendingConfirmation> AgentPendingConfirmations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -116,6 +121,103 @@ namespace CuteBlogSystem.Config
                 .WithMany(c => c.Tags)
                 .HasForeignKey(t => t.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);   // 删除分类时不删除标签，避免数据丢失
+
+            // 配置 AgentConversationMemory 的 ConversationId 唯一索引，确保每个会话只有一条记忆记录
+            modelBuilder.Entity<AgentConversationMemory>(entity =>
+            {
+                entity.Property(m => m.SessionId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.HasIndex(m => m.SessionId)
+                    .IsUnique();
+
+                entity.HasOne(m => m.Conversation)
+                    .WithOne(c => c.Memory)
+                    .HasForeignKey<AgentConversationMemory>(m => m.SessionId)
+                    .OnDelete(DeleteBehavior.Cascade); // 配置级联删除，当会话被删除时，相关的记忆记录也被删除
+
+                entity.Property(m => m.ConversationSummary).HasMaxLength(4000);
+            });
+
+            // 配置 AgentConversation 的 SessionId 作为主键，并添加必要的属性配置
+            modelBuilder.Entity<AgentConversation>(entity =>
+            {
+                entity.HasKey(c => c.SessionId);
+
+                entity.Property(c => c.SessionId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(c => c.Title)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(c => c.ModelUsed)
+                    .HasMaxLength(100);
+
+                entity.Property(c => c.Status)
+                    .HasConversion<string>()    // 将枚举转换为字符串存储
+                    .HasMaxLength(20)
+                    .IsRequired();
+
+                entity.HasIndex(c => new { c.UserId, c.UpdatedAt });
+            });
+
+            // 配置 AgentMessage 的 MessageId 作为主键，并添加必要的属性配置
+            modelBuilder.Entity<AgentMessage>(entity =>
+            {
+                entity.HasKey(m => m.MessageId);
+
+                entity.Property(m => m.SessionId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(m => m.Role)
+                    .HasConversion<string>()
+                    .HasMaxLength(20)
+                    .IsRequired();
+
+                entity.Property(m => m.Content)
+                    .IsRequired();
+
+                entity.HasOne(m => m.Conversation)
+                    .WithMany(c => c.Messages)
+                    .HasForeignKey(m => m.SessionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(m => new { m.SessionId, m.CreatedAt });
+            });
+
+            // 配置 AgentPendingConfirmation 的 ID 作为主键，并添加索引，以及配置其他必要属性
+            modelBuilder.Entity<AgentPendingConfirmation>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.ConfirmationId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.SessionId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.UserId)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.UserMessage)
+                    .HasMaxLength(1000)
+                    .IsRequired();
+
+                entity.Property(x => x.PlanJson)
+                    .IsRequired();
+
+                entity.HasIndex(x => x.ConfirmationId)
+                    .IsUnique();
+
+                entity.HasIndex(x => new { x.SessionId, x.Status });
+            });
 
             base.OnModelCreating(modelBuilder);
         }

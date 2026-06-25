@@ -6,7 +6,7 @@ import { getArticlesApi, getRecommendedArticlesApi, getToppedArticlesApi } from 
 import { formatDate, toAbsoluteAsset } from "../utils/asset";
 import bannerHome from "../assets/images/banner-home.png";
 import heroShark from "../assets/images/hero-shark.png";
-import { Hand, Eye, Heart } from "lucide-vue-next";
+import { PartyPopper, Eye, Heart } from "lucide-vue-next";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -78,11 +78,10 @@ onMounted(loadHomeData);
 
 <template>
   <section class="page-stack">
-    <header class="sea-hero card" :style="{ backgroundImage: `url(${bannerHome})` }">
+    <header class="sea-hero card home-hero" :style="{ backgroundImage: `url(${bannerHome})` }">
       <div class="hero-copy">
-        <h1>嗨！我是 <span>Sharky</span> <Hand :size="26" class="title-icon" /></h1>
-        <p class="hero-sub">一只热爱编程与分享的小鲨鱼</p>
-        <p>这里记录我的学习笔记、生活点滴和有趣想法，希望对你有帮助。</p>
+        <h1>嗨！欢迎来到<span>Sharky Blog</span>！ <PartyPopper :size="26" class="title-icon" /></h1>
+        <p class="hero-sub">做爱分享的小鲨鱼！</p>
         <div class="hero-actions">
           <button class="btn solid" @click="$router.push('/articles')">查看文章</button>
           <button class="btn ghost" @click="$router.push('/profile')">关于我</button>
@@ -121,17 +120,12 @@ onMounted(loadHomeData);
       </section>
 
       <aside class="right-column">
-        <section class="panel side-panel card">
+        <section class="panel side-panel card home-about-card">
           <h2>关于我</h2>
           <div class="about-mini">
             <img :src="profileAvatar" alt="avatar" />
             <h3>{{ profileName }}</h3>
             <p>{{ profileBio }}</p>
-            <div class="mini-stats">
-              <div><strong>{{ allArticles.length }}</strong><span>文章</span></div>
-              <div><strong>{{ categoryStats.length }}</strong><span>分类</span></div>
-              <div><strong>{{ hotTags.length }}</strong><span>标签</span></div>
-            </div>
           </div>
         </section>
 

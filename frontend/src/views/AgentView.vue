@@ -1,0 +1,914 @@
+﻿<script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import { Archive, Bug, MoreHorizontal, Plus, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
+import {
+  archiveAgentConversationApi,
+  askAgentApi,
+  cancelAgentConfirmationApi,
+  confirmAgentPlanApi,
+  deleteAgentConversationApi,
+  getAgentConversationsApi,
+  getAgentWorkflowLogDetailApi,
+  getRecentAgentWorkflowLogsApi,
+  getAgentMessagesApi,
+  getArchivedAgentConversationsApi,
+  restoreAgentConversationApi
+} from "../api/agent";
+import { useAuthStore } from "../stores/auth";
+import { showSuccess } from "../stores/feedback";
+import { toAbsoluteAsset } from "../utils/asset";
+import agentAvatar from "../assets/images/agent-avator.png";
+import userAvatarFallback from "../assets/images/logo-shark.png";
+
+const authStore = useAuthStore();
+const input = ref("");
+const loading = ref(false);
+const historyLoading = ref(false);
+const messageLoading = ref(false);
+const sessionId = ref("");
+const conversations = ref([]);
+const messages = ref([createWelcomeMessage()]);
+const dialogRef = ref(null);
+const openConversationMenuId = ref("");
+const conversationActionLoadingId = ref("");
+const confirmationLoadingId = ref("");
+const conversationView = ref("active");
+const logPanelOpen = ref(false);
+const workflowLogs = ref([]);
+const selectedWorkflowLog = ref(null);
+const workflowLogLoading = ref(false);
+const workflowLogDetailLoading = ref(false);
+
+const canSend = computed(
+  () => conversationView.value === "active" && input.value.trim() && !loading.value
+);
+const groupedConversations = computed(() => groupConversations(conversations.value));
+const userAvatar = computed(() => toAbsoluteAsset(authStore.profile?.avatarUrl) || userAvatarFallback);
+
+function createWelcomeMessage() {
+  return {
+    role: "assistant",
+    content: "你好，我是博客助手 Agent。你可以让我帮你润色文章、生成标签、推荐分类，或继续当前会话里的上下文任务。"
+  };
+}
+
+function renderAssistantMarkdown(content) {
+  return DOMPurify.sanitize(marked.parse(content || ""));
+}
+
+function scrollDialogToBottom() {
+  nextTick(() => {
+    const dialog = dialogRef.value;
+    if (!dialog) return;
+    dialog.scrollTop = dialog.scrollHeight;
+  });
+}
+
+function getTokenPayload() {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function getCurrentUserId() {
+  const payload = getTokenPayload();
+  const rawId =
+    payload?.nameid ||
+    payload?.sub ||
+    payload?.userId ||
+    payload?.["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"];
+
+  const parsed = Number(rawId);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatAgentResponse(response) {
+  if (typeof response === "string") return response;
+  if (!response || typeof response !== "object") return "Agent 已响应，但没有返回可展示内容。";
+
+  return (
+    response.answer ||
+    response.Answer ||
+    response.finalAnswer ||
+    response.result ||
+    response.content ||
+    response.message ||
+    response.data?.answer ||
+    response.data?.Answer ||
+    response.data?.finalAnswer ||
+    response.data?.result ||
+    JSON.stringify(response, null, 2)
+  );
+}
+
+function getResponseValue(response, camelKey, pascalKey) {
+  return response?.[camelKey] ?? response?.[pascalKey] ?? response?.data?.[camelKey] ?? response?.data?.[pascalKey];
+}
+
+function createAssistantMessageFromResponse(response) {
+  const requiresConfirmation = Boolean(
+    getResponseValue(response, "requiresConfirmation", "RequiresConfirmation")
+  );
+  const confirmationId = getResponseValue(response, "confirmationId", "ConfirmationId") || "";
+
+  return {
+    role: "assistant",
+    content: formatAgentResponse(response),
+    requiresConfirmation: requiresConfirmation && Boolean(confirmationId),
+    confirmationId,
+    confirmationSummary: getResponseValue(response, "confirmationSummary", "ConfirmationSummary") || "",
+    confirmationStatus: requiresConfirmation && confirmationId ? "pending" : "none"
+  };
+}
+function formatConversationTitle(item) {
+  return item.title || item.Title || "新对话";
+}
+
+function getConversationSessionId(item) {
+  return item.sessionId || item.SessionId || "";
+}
+
+function getConversationUpdatedAt(item) {
+  return item.updatedAt || item.UpdatedAt || item.createdAt || item.CreatedAt || "";
+}
+
+function getMessageRole(item) {
+  const role = item.role ?? item.Role;
+  if (role === 2 || role === "User" || role === "user") return "user";
+  return "assistant";
+}
+
+function getMessageContent(item) {
+  return item.content || item.Content || "";
+}
+
+function normalizeMessages(rows) {
+  const list = (rows || [])
+    .map((item) => ({
+      role: getMessageRole(item),
+      content: getMessageContent(item)
+    }))
+    .filter((item) => item.content.trim());
+
+  return list.length ? list : [createWelcomeMessage()];
+}
+
+function isSameDay(date, target) {
+  return (
+    date.getFullYear() === target.getFullYear() &&
+    date.getMonth() === target.getMonth() &&
+    date.getDate() === target.getDate()
+  );
+}
+
+function groupConversations(rows) {
+  const groups = [
+    { group: "今天", items: [] },
+    { group: "昨天", items: [] },
+    { group: "7天内", items: [] },
+    { group: "更早", items: [] }
+  ];
+
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  rows.forEach((item) => {
+    const updated = new Date(getConversationUpdatedAt(item));
+    const bucket =
+      Number.isNaN(updated.getTime())
+        ? groups[3]
+        : isSameDay(updated, now)
+          ? groups[0]
+          : isSameDay(updated, yesterday)
+            ? groups[1]
+            : now.getTime() - updated.getTime() <= 7 * 24 * 60 * 60 * 1000
+              ? groups[2]
+              : groups[3];
+
+    bucket.items.push(item);
+  });
+
+  return groups.filter((group) => group.items.length);
+}
+
+async function loadConversations() {
+  historyLoading.value = true;
+  try {
+    const res = conversationView.value === "archived"
+      ? await getArchivedAgentConversationsApi()
+      : await getAgentConversationsApi();
+    conversations.value = Array.isArray(res.data) ? res.data : [];
+  } catch {
+    conversations.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+async function loadMessages(nextSessionId) {
+  if (!nextSessionId) {
+    messages.value = [createWelcomeMessage()];
+    return;
+  }
+
+  messageLoading.value = true;
+  try {
+    const res = await getAgentMessagesApi(nextSessionId);
+    messages.value = normalizeMessages(res.data);
+  } catch (err) {
+    messages.value = [
+      {
+        role: "assistant",
+        content: err?.payload?.message || err?.message || "会话消息加载失败，请稍后再试。"
+      }
+    ];
+  } finally {
+    messageLoading.value = false;
+  }
+}
+
+function newConversation() {
+  openConversationMenuId.value = "";
+  conversationView.value = "active";
+  sessionId.value = "";
+  loadConversations();
+  messages.value = [
+    {
+      role: "assistant",
+      content: "新的会话已开启。告诉我你想处理的博客任务吧。"
+    }
+  ];
+}
+
+async function setConversationView(view) {
+  if (conversationView.value === view) return;
+
+  conversationView.value = view;
+  openConversationMenuId.value = "";
+  sessionId.value = "";
+  messages.value = [
+    {
+      role: "assistant",
+      content: view === "archived"
+        ? "这里是已归档会话。你可以查看历史消息、恢复会话或将其删除。"
+        : "已返回活跃会话列表。选择一个会话继续，或开启新对话。"
+    }
+  ];
+
+  await loadConversations();
+}
+
+function toggleConversationMenu(item) {
+  const itemSessionId = getConversationSessionId(item);
+  openConversationMenuId.value =
+    openConversationMenuId.value === itemSessionId ? "" : itemSessionId;
+}
+
+function closeConversationMenu() {
+  openConversationMenuId.value = "";
+}
+
+function handleDocumentKeydown(event) {
+  if (event.key === "Escape") {
+    closeConversationMenu();
+  }
+}
+
+async function switchConversation(item) {
+  const nextSessionId = getConversationSessionId(item);
+  if (!nextSessionId) return;
+
+  sessionId.value = nextSessionId;
+  await loadMessages(nextSessionId);
+}
+
+async function archiveConversation(item) {
+  const itemSessionId = getConversationSessionId(item);
+  if (!itemSessionId || conversationActionLoadingId.value) return;
+
+  conversationActionLoadingId.value = itemSessionId;
+  closeConversationMenu();
+
+  try {
+    const response = await archiveAgentConversationApi(itemSessionId);
+    if (sessionId.value === itemSessionId) {
+      newConversation();
+    }
+    await loadConversations();
+    showSuccess(response.message || "会话已归档");
+  } finally {
+    conversationActionLoadingId.value = "";
+  }
+}
+
+async function restoreConversation(item) {
+  const itemSessionId = getConversationSessionId(item);
+  if (!itemSessionId || conversationActionLoadingId.value) return;
+
+  conversationActionLoadingId.value = itemSessionId;
+  closeConversationMenu();
+
+  try {
+    const response = await restoreAgentConversationApi(itemSessionId);
+    if (sessionId.value === itemSessionId) {
+      sessionId.value = "";
+      messages.value = [
+        {
+          role: "assistant",
+          content: "该会话已恢复到活跃列表，可以切换到活跃会话继续交流。"
+        }
+      ];
+    }
+    await loadConversations();
+    showSuccess(response.message || "会话已恢复");
+  } finally {
+    conversationActionLoadingId.value = "";
+  }
+}
+
+async function deleteConversation(item) {
+  const itemSessionId = getConversationSessionId(item);
+  if (!itemSessionId || conversationActionLoadingId.value) return;
+
+  const confirmed = window.confirm(
+    `确定删除会话“${formatConversationTitle(item)}”吗？此操作无法恢复。`
+  );
+  if (!confirmed) return;
+
+  conversationActionLoadingId.value = itemSessionId;
+  closeConversationMenu();
+
+  try {
+    const response = await deleteAgentConversationApi(itemSessionId);
+    if (sessionId.value === itemSessionId) {
+      newConversation();
+    }
+    await loadConversations();
+    showSuccess(response.message || "会话已删除");
+  } finally {
+    conversationActionLoadingId.value = "";
+  }
+}
+
+async function syncLatestConversation() {
+  await loadConversations();
+  const latest = conversations.value[0];
+  const latestSessionId = latest ? getConversationSessionId(latest) : "";
+  if (latestSessionId) {
+    sessionId.value = latestSessionId;
+  }
+}
+
+function canHandleConfirmation(message) {
+  return message.role === "assistant" &&
+    message.requiresConfirmation &&
+    message.confirmationStatus === "pending" &&
+    message.confirmationId;
+}
+
+async function confirmAgentPlan(message) {
+  if (loading.value || !canHandleConfirmation(message) || confirmationLoadingId.value) return;
+
+  confirmationLoadingId.value = message.confirmationId;
+
+  try {
+    const response = await confirmAgentPlanApi({
+      sessionId: sessionId.value,
+      confirmationId: message.confirmationId
+    });
+
+    message.requiresConfirmation = false;
+    message.confirmationStatus = response.success ? "confirmed" : "failed";
+
+    messages.value.push(createAssistantMessageFromResponse(response));
+    await syncLatestConversation();
+  } catch (err) {
+    message.confirmationStatus = "failed";
+    messages.value.push({
+      role: "assistant",
+      content: err?.payload?.message || err?.message || "确认执行失败，请稍后再试。"
+    });
+  } finally {
+    confirmationLoadingId.value = "";
+  }
+}
+
+async function cancelAgentConfirmation(message) {
+  if (loading.value || !canHandleConfirmation(message) || confirmationLoadingId.value) return;
+
+  confirmationLoadingId.value = message.confirmationId;
+
+  try {
+    const response = await cancelAgentConfirmationApi({
+      sessionId: sessionId.value,
+      confirmationId: message.confirmationId
+    });
+
+    message.requiresConfirmation = false;
+    message.confirmationStatus = response.success ? "cancelled" : "failed";
+  } catch (err) {
+    message.confirmationStatus = "failed";
+    messages.value.push({
+      role: "assistant",
+      content: err?.payload?.message || err?.message || "取消确认失败，请稍后再试。"
+    });
+  } finally {
+    confirmationLoadingId.value = "";
+  }
+}
+
+function getLogValue(item, camelKey, pascalKey) {
+  return item?.[camelKey] ?? item?.[pascalKey];
+}
+
+function getLogId(item) {
+  return getLogValue(item, "id", "Id");
+}
+
+function getLogUserMessage(item) {
+  return getLogValue(item, "userMessage", "UserMessage") || "";
+}
+
+function getLogMessage(item) {
+  return getLogValue(item, "message", "Message") || "";
+}
+
+function getLogDuration(item) {
+  return Number(getLogValue(item, "durationMs", "DurationMs") || 0);
+}
+
+function getLogStartedAt(item) {
+  return getLogValue(item, "startedAt", "StartedAt") || "";
+}
+
+function isLogSuccess(item) {
+  return Boolean(getLogValue(item, "success", "Success"));
+}
+
+function isLogRecovered(item) {
+  return Boolean(getLogValue(item, "recovered", "Recovered"));
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "-";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function getLogStatusText(item) {
+  if (isLogSuccess(item)) return "成功";
+  if (isLogRecovered(item)) return "已补救";
+  return "失败";
+}
+
+function getLogStatusClass(item) {
+  return {
+    success: isLogSuccess(item),
+    recovered: !isLogSuccess(item) && isLogRecovered(item),
+    failed: !isLogSuccess(item) && !isLogRecovered(item)
+  };
+}
+
+function formatJsonBlock(value) {
+  if (!value) return "暂无数据";
+  if (typeof value !== "string") return JSON.stringify(value, null, 2);
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function getDetailField(camelKey, pascalKey) {
+  return selectedWorkflowLog.value?.[camelKey] ?? selectedWorkflowLog.value?.[pascalKey] ?? "";
+}
+
+async function loadRecentWorkflowLogs() {
+  workflowLogLoading.value = true;
+
+  try {
+    const response = await getRecentAgentWorkflowLogsApi(20);
+    workflowLogs.value = Array.isArray(response.data) ? response.data : [];
+
+    if (workflowLogs.value.length && !selectedWorkflowLog.value) {
+      await selectWorkflowLog(workflowLogs.value[0]);
+    }
+  } catch {
+    workflowLogs.value = [];
+  } finally {
+    workflowLogLoading.value = false;
+  }
+}
+
+async function selectWorkflowLog(item) {
+  const id = getLogId(item);
+  if (!id || workflowLogDetailLoading.value) return;
+
+  workflowLogDetailLoading.value = true;
+
+  try {
+    const response = await getAgentWorkflowLogDetailApi(id);
+    selectedWorkflowLog.value = response.data || null;
+  } catch {
+    selectedWorkflowLog.value = null;
+  } finally {
+    workflowLogDetailLoading.value = false;
+  }
+}
+
+async function openWorkflowLogPanel() {
+  logPanelOpen.value = true;
+  selectedWorkflowLog.value = null;
+  await loadRecentWorkflowLogs();
+}
+
+function closeWorkflowLogPanel() {
+  logPanelOpen.value = false;
+}
+
+async function refreshWorkflowLogs() {
+  selectedWorkflowLog.value = null;
+  await loadRecentWorkflowLogs();
+}
+async function sendMessage() {
+  const text = input.value.trim();
+  if (conversationView.value !== "active" || !text || loading.value) return;
+
+  const userId = getCurrentUserId();
+  if (!userId) {
+    messages.value.push({
+      role: "assistant",
+      content: "无法从登录令牌中解析用户身份，请重新登录后再试。"
+    });
+    return;
+  }
+
+  messages.value.push({ role: "user", content: text });
+  input.value = "";
+  loading.value = true;
+
+  try {
+    const response = await askAgentApi({
+      content: text,
+      sessionId: sessionId.value,
+      userId
+    });
+    messages.value.push(createAssistantMessageFromResponse(response));
+    await syncLatestConversation();
+  } catch (err) {
+    messages.value.push({
+      role: "assistant",
+      content: err?.payload?.message || err?.message || "Agent 调用失败，请稍后再试。"
+    });
+  } finally {
+    loading.value = false;
+  }
+}
+
+watch(messages, scrollDialogToBottom, { deep: true });
+
+onMounted(() => {
+  document.addEventListener("click", closeConversationMenu);
+  document.addEventListener("keydown", handleDocumentKeydown);
+  if (authStore.token && !authStore.profile) {
+    authStore.fetchProfile();
+  }
+  loadConversations();
+  scrollDialogToBottom();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", closeConversationMenu);
+  document.removeEventListener("keydown", handleDocumentKeydown);
+});
+</script>
+
+<template>
+  <section class="agent-page">
+    <main class="agent-main">
+      <section class="agent-chat-panel">
+        <div ref="dialogRef" class="agent-dialog">
+          <article
+            v-for="(message, index) in messages"
+            :key="index"
+            class="agent-bubble-row"
+            :class="message.role"
+          >
+            <img
+              v-if="message.role === 'assistant'"
+              class="agent-avatar"
+              :src="agentAvatar"
+              alt="Sharky Agent"
+            />
+            <div class="agent-bubble">
+              <div
+                v-if="message.role === 'assistant'"
+                class="markdown-body agent-markdown"
+                v-html="renderAssistantMarkdown(message.content)"
+              ></div>
+              <pre v-else>{{ message.content }}</pre>
+              <div
+                v-if="message.confirmationStatus && message.confirmationStatus !== 'none'"
+                class="agent-confirm-box"
+              >
+                <p v-if="message.confirmationSummary" class="agent-confirm-summary">
+                  {{ message.confirmationSummary }}
+                </p>
+                <div v-if="message.confirmationStatus === 'pending'" class="agent-confirm-actions">
+                  <button
+                    type="button"
+                    class="agent-confirm-btn primary"
+                    :disabled="loading || confirmationLoadingId === message.confirmationId"
+                    @click.stop="confirmAgentPlan(message)"
+                  >
+                    确认执行
+                  </button>
+                  <button
+                    type="button"
+                    class="agent-confirm-btn ghost"
+                    :disabled="loading || confirmationLoadingId === message.confirmationId"
+                    @click.stop="cancelAgentConfirmation(message)"
+                  >
+                    取消
+                  </button>
+                </div>
+                <p v-else-if="message.confirmationStatus === 'confirmed'" class="agent-confirm-status">
+                  已确认，正在执行结果已返回。
+                </p>
+                <p v-else-if="message.confirmationStatus === 'cancelled'" class="agent-confirm-status">
+                  已取消该操作。
+                </p>
+                <p v-else class="agent-confirm-status warning">
+                  确认请求已失效，请重新发起任务。
+                </p>
+              </div>
+            </div>
+            <img v-if="message.role === 'user'" class="agent-avatar user-avatar" :src="userAvatar" alt="user" />
+          </article>
+
+          <p v-if="messageLoading" class="agent-thinking">正在加载会话消息...</p>
+          <p v-if="loading" class="agent-thinking">Sharky Agent 正在思考...</p>
+        </div>
+
+        <form class="agent-input-box" @submit.prevent="sendMessage">
+          <textarea
+            v-model="input"
+            :disabled="conversationView === 'archived'"
+            :placeholder="conversationView === 'archived'
+              ? '归档会话仅供查看，恢复后可继续对话'
+              : '输入你的问题，或告诉我你想写的内容...'"
+            @keydown.ctrl.enter.prevent="sendMessage"
+          />
+          <div class="agent-tool-row">
+            <button class="agent-send" :disabled="!canSend">
+              <Send :size="17" />
+              发送
+            </button>
+          </div>
+        </form>
+
+        <div class="agent-note">
+          <span>Sharky 可能会出错，请核查重要信息。</span>
+          <div class="agent-note-actions">
+            <button type="button" @click="openWorkflowLogPanel">
+              <Bug :size="15" />
+              执行日志
+            </button>
+            <button type="button" @click="newConversation">清空对话</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="agent-side">
+      <section class="agent-history-panel">
+        <button type="button" class="agent-new-chat" @click="newConversation">
+          <Plus :size="16" />
+          开启新对话
+        </button>
+
+        <div class="agent-history-tabs" aria-label="会话状态筛选">
+          <button
+            type="button"
+            :class="{ active: conversationView === 'active' }"
+            @click="setConversationView('active')"
+          >
+            活跃
+          </button>
+          <button
+            type="button"
+            :class="{ active: conversationView === 'archived' }"
+            @click="setConversationView('archived')"
+          >
+            已归档
+          </button>
+        </div>
+
+        <p v-if="historyLoading" class="agent-history-empty">正在加载会话...</p>
+        <p v-else-if="!groupedConversations.length" class="agent-history-empty">暂无历史会话</p>
+
+        <div v-for="group in groupedConversations" :key="group.group" class="agent-history-group">
+          <h3>{{ group.group }}</h3>
+          <div
+            v-for="(item, index) in group.items"
+            :key="getConversationSessionId(item) || index"
+            class="agent-history-item"
+            :class="{ active: getConversationSessionId(item) === sessionId }"
+          >
+            <button
+              type="button"
+              class="agent-history-link"
+              @click="switchConversation(item)"
+            >
+              <span>{{ formatConversationTitle(item) }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="agent-history-more"
+              :aria-label="`管理会话：${formatConversationTitle(item)}`"
+              :aria-expanded="openConversationMenuId === getConversationSessionId(item)"
+              @click.stop="toggleConversationMenu(item)"
+            >
+              <MoreHorizontal :size="17" />
+            </button>
+
+            <div
+              v-if="openConversationMenuId === getConversationSessionId(item)"
+              class="agent-conversation-menu"
+              @click.stop
+            >
+              <button
+                v-if="conversationView === 'active'"
+                type="button"
+                :disabled="conversationActionLoadingId === getConversationSessionId(item)"
+                @click="archiveConversation(item)"
+              >
+                <Archive :size="17" />
+                <span>归档</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                :disabled="conversationActionLoadingId === getConversationSessionId(item)"
+                @click="restoreConversation(item)"
+              >
+                <RotateCcw :size="17" />
+                <span>恢复</span>
+              </button>
+              <button
+                type="button"
+                class="danger"
+                :disabled="conversationActionLoadingId === getConversationSessionId(item)"
+                @click="deleteConversation(item)"
+              >
+                <Trash2 :size="17" />
+                <span>删除</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <div v-if="logPanelOpen" class="agent-log-modal" @click.self="closeWorkflowLogPanel">
+      <section class="agent-log-panel" aria-label="Agent 执行日志">
+        <header class="agent-log-head">
+          <div>
+            <h2>Agent 执行日志</h2>
+            <p>查看最近工作流、计划、执行结果和补救信息。</p>
+          </div>
+          <div class="agent-log-head-actions">
+            <button type="button" :disabled="workflowLogLoading" @click="refreshWorkflowLogs">
+              <RefreshCw :size="16" />
+              刷新
+            </button>
+            <button type="button" class="icon" aria-label="关闭日志面板" @click="closeWorkflowLogPanel">
+              <X :size="18" />
+            </button>
+          </div>
+        </header>
+
+        <div class="agent-log-body">
+          <aside class="agent-log-list">
+            <p v-if="workflowLogLoading" class="agent-log-empty">正在加载执行日志...</p>
+            <p v-else-if="!workflowLogs.length" class="agent-log-empty">暂无执行日志</p>
+            <button
+              v-for="item in workflowLogs"
+              v-else
+              :key="getLogId(item)"
+              type="button"
+              class="agent-log-item"
+              :class="{ active: getLogId(item) === getLogId(selectedWorkflowLog) }"
+              @click="selectWorkflowLog(item)"
+            >
+              <span class="agent-log-item-title">{{ getLogUserMessage(item) }}</span>
+              <span class="agent-log-item-meta">
+                <span class="agent-log-status" :class="getLogStatusClass(item)">
+                  {{ getLogStatusText(item) }}
+                </span>
+                <span>{{ formatDuration(getLogDuration(item)) }}</span>
+              </span>
+              <span class="agent-log-item-time">{{ formatDateTime(getLogStartedAt(item)) }}</span>
+            </button>
+          </aside>
+
+          <main class="agent-log-detail">
+            <p v-if="workflowLogDetailLoading" class="agent-log-empty">正在加载详情...</p>
+            <p v-else-if="!selectedWorkflowLog" class="agent-log-empty">选择一条日志查看详情</p>
+            <template v-else>
+              <div class="agent-log-summary">
+                <div>
+                  <span>状态</span>
+                  <strong>{{ getLogStatusText(selectedWorkflowLog) }}</strong>
+                </div>
+                <div>
+                  <span>耗时</span>
+                  <strong>{{ formatDuration(getLogDuration(selectedWorkflowLog)) }}</strong>
+                </div>
+                <div>
+                  <span>开始时间</span>
+                  <strong>{{ formatDateTime(getLogStartedAt(selectedWorkflowLog)) }}</strong>
+                </div>
+              </div>
+
+              <section class="agent-log-section">
+                <h3>用户问题</h3>
+                <p>{{ getDetailField("userMessage", "UserMessage") }}</p>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>最终回答</h3>
+                <p>{{ getDetailField("answer", "Answer") || "暂无回答" }}</p>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>执行消息</h3>
+                <p>{{ getDetailField("message", "Message") || "暂无消息" }}</p>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>PlanJson</h3>
+                <pre>{{ formatJsonBlock(getDetailField("planJson", "PlanJson")) }}</pre>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>ExecutionResultJson</h3>
+                <pre>{{ formatJsonBlock(getDetailField("executionResultJson", "ExecutionResultJson")) }}</pre>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>FailureAnalysis</h3>
+                <pre>{{ getDetailField("failureAnalysis", "FailureAnalysis") || "暂无失败分析" }}</pre>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>RecoveryPlanJson</h3>
+                <pre>{{ formatJsonBlock(getDetailField("recoveryPlanJson", "RecoveryPlanJson")) }}</pre>
+              </section>
+
+              <section class="agent-log-section">
+                <h3>RecoveryExecutionResultJson</h3>
+                <pre>{{ formatJsonBlock(getDetailField("recoveryExecutionResultJson", "RecoveryExecutionResultJson")) }}</pre>
+              </section>
+            </template>
+          </main>
+        </div>
+      </section>
+    </div>
+  </section>
+</template>
+
+
+
+
+
+
+
+
+
+

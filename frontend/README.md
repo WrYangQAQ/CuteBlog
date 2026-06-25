@@ -14,14 +14,13 @@ npm install
 npm run dev
 ```
 
-默认地址为 `http://localhost:5173`，已在 `vite.config.js` 里将 `/api` 与 `/Picture` 代理到 `https://localhost:7181`。
+默认地址为 `http://localhost:5174/app/`，已在 `vite.config.js` 里将 `/api` 与 `/Picture` 代理到 `http://127.0.0.1:5125`。
 
-## 环境变量（可选）
+## 环境变量
 
-当前仓库已包含 `.env`，默认指向你当前的 Sakura 隧道地址。  
-如果后续隧道地址变化，可修改 `.env`：
+如果需要直接请求外部后端地址，可以在 `.env` 中配置：
 
 ```env
-VITE_API_BASE_URL=https://119.84.246.218:24170
-VITE_API_ORIGIN=https://119.84.246.218:24170
+VITE_API_BASE_URL=
+VITE_API_ORIGIN=
 ```

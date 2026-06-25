@@ -149,26 +149,13 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(false, "用户不存在！");
             }
 
-            GetUserInformationDTO userInfo = new GetUserInformationDTO
-            {
-                NickName = user.NickName,
-                Bio = user.Bio,
-                AvatarUrl = user.AvatarUrl
-            };
+            GetUserInformationDTO userInfo = new GetUserInformationDTO(user);
 
             var comments = await _commentRepository.GetCommentsByUserIdAsync(userId);
             userInfo.CommentCount = comments.Count;  // 获取用户的评论数量
 
             var likedArticles = await _articleLikeRepository.GetLikedArticlesByUserIdAsync(userId);
-            var ArticlesLike = likedArticles.Select(a => new ArticleSummaryDTO
-            {
-                Id = a.Id,
-                Title = a.Title,
-                CoverUrl = a.CoverUrl,
-                ViewCount = a.ViewCount,
-                LikeCount = a.LikeCount,
-                CreatedAt = a.CreatedAt
-            }).ToList();
+            var ArticlesLike = likedArticles.Select(a => new ArticleSummaryDTO(a)).ToList();
 
             userInfo.ArticlesLike = ArticlesLike;  // 获取用户点赞的文章列表
 
@@ -299,18 +286,7 @@ namespace CuteBlogSystem.Service
             List<Article> articles = await _articleRepository.GetArticlesByUserIdAsync(userId);
 
             // 将Article实体列表转换为GetArticleListDTO列表
-            getArticleListDTOs = articles.Select(article => new GetArticleListDTO
-            {
-                Id = article.Id,
-                Title = article.Title,
-                Summary = article.Summary,
-                CoverUrl = article.CoverUrl,
-                ViewCount = article.ViewCount,
-                LikeCount = article.LikeCount,
-                CreatedAt = article.CreatedAt,
-                CategoryName = article.Category?.Name ?? "未分类",
-                TagNames = article.ArticleTags?.Select(at => at.Tag.Name).ToList() ?? new List<string>()
-            }).ToList();
+            getArticleListDTOs = articles.Select(article => new GetArticleListDTO(article)).ToList();
 
             // 对GetArticlesListDTO列表按照创建时间进行降序排序
             getArticleListDTOs = getArticleListDTOs.OrderByDescending(dto => dto.CreatedAt).ToList();

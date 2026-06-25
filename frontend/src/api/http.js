@@ -9,6 +9,7 @@ function normalizeApiBody(body) {
   if (!hasCamel && !hasPascal) return null;
 
   return {
+    ...body,
     success: hasCamel ? body.success : body.Success,
     message: body.message ?? body.Message ?? "",
     data: body.data ?? body.Data,
@@ -79,6 +80,10 @@ http.interceptors.response.use(
 
     if (normalized) {
       if (!normalized.success) {
+        if (response.config.allowBusinessFailure) {
+          return normalized;
+        }
+
         const msg = normalized.message || "请求失败";
         showError(msg, "请求失败");
         const err = new Error(msg);

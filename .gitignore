@@ -1,4 +1,4 @@
-# backend
+﻿# backend
 **/bin/
 **/obj/
 **/appsettings.Development.json
@@ -21,9 +21,11 @@ frontend/.vite/
 .idea/
 .DS_Store
 Thumbs.db
-
+tmp/
+%SystemDrive%/
 # uploaded/static generated assets (keep code, ignore runtime uploads)
 backend/CuteBlogSystem/wwwroot/Picture/Avatar/UserUploadAvatar/
 backend/CuteBlogSystem/wwwroot/Picture/ArticleImage/Cover/
 backend/CuteBlogSystem/wwwroot/Picture/ArticleImage/Inline/
 backend/CuteBlogSystem/wwwroot/Picture/WebsiteDecorationImage/
+

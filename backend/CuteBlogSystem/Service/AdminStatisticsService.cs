@@ -47,12 +47,7 @@ namespace CuteBlogSystem.Service
 
             // 获取浏览量最高的5篇文章
             var top5ArticlesByViews = articles.OrderByDescending(a => a.ViewCount).Take(5).ToList();
-            var ArticlesByViewsDTOs = top5ArticlesByViews.Select(a => new ArticleSummaryDTO
-            {
-                Id = a.Id,
-                Title = a.Title,
-                ViewCount = a.ViewCount
-            }).ToList();
+            var ArticlesByViewsDTOs = top5ArticlesByViews.Select(article => new ArticleSummaryDTO(article)).ToList();
             adminStatistics.Top5ArticlesByViews = ArticlesByViewsDTOs;
 
             return new ApiResponse(true, "数据统计成功！", adminStatistics);

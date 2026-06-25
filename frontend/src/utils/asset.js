@@ -1,4 +1,4 @@
-﻿const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "https://localhost:7181";
+const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "";
 
 export function toAbsoluteAsset(url) {
   if (!url) return "";

@@ -1,4 +1,6 @@
-﻿namespace CuteBlogSystem.DTO
+﻿using CuteBlogSystem.Entity;
+
+namespace CuteBlogSystem.DTO
 {
     public class ArticleSummaryDTO
     {
@@ -8,5 +10,15 @@
         public int ViewCount { get; set; }
         public int LikeCount { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        public ArticleSummaryDTO(Article article)
+        {
+            Id = article.Id;
+            Title = article.Title;
+            CoverUrl = article.CoverUrl;
+            ViewCount = article.ViewCount;
+            LikeCount = article.LikeCount;
+            CreatedAt = article.CreatedAt;
+        }
     }
 }

@@ -5,15 +5,16 @@ using CuteBlogSystem.Repository;
 using CuteBlogSystem.Service;
 using CuteBlogSystem.Util;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SemanticKernel;
-using Microsoft.AspNetCore.RateLimiting;
 using System;
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
-using System.Security.Claims;
+using Yitter.IdGenerator;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,7 +28,13 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:5173",
-                "http://127.0.0.1:5173"
+                "http://127.0.0.1:5173",
+                "https://localhost:5173",
+                "https://127.0.0.1:5173",
+                "http://localhost:5174",
+                "http://127.0.0.1:5174",
+                "https://localhost:5174",
+                "https://127.0.0.1:5174"
             )
               .AllowAnyMethod()
               .AllowAnyHeader();
@@ -100,6 +107,11 @@ builder.Services.AddScoped<ArticleLikeRepository>();
 builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<CommentRepository>();
 builder.Services.AddScoped<TagRepository>();
+builder.Services.AddScoped<AgentWorkflowLogRepository>();
+builder.Services.AddScoped<AgentConversationMemoryRepository>();
+builder.Services.AddScoped<AgentConversationRepository>();
+builder.Services.AddScoped<AgentMessageRepository>();
+builder.Services.AddScoped<AgentPendingConfirmationRepository>();
 
 // 注册自定义服务
 builder.Services.AddScoped<UserService>();
@@ -112,6 +124,28 @@ builder.Services.AddScoped<AdminStatisticsService>();
 builder.Services.AddScoped<AiChatService>();
 builder.Services.AddScoped<AiAgentService>();
 builder.Services.AddScoped<AiPlannerService>();
+builder.Services.AddScoped<AgentPlanExecutorService>();
+builder.Services.AddScoped<AgentPlanValidatorService>();
+builder.Services.AddScoped<AgentPlanRepairService>();
+builder.Services.AddScoped<AgentExecutionFailureAnalyzerService>();
+builder.Services.AddScoped<AgentReplannerService>();
+builder.Services.AddScoped<AgentWorkflowService>();
+builder.Services.AddScoped<AgentWorkflowLogService>();
+builder.Services.AddScoped<AgentConversationMemoryService>();
+builder.Services.AddScoped<AgentMessageService>();
+builder.Services.AddScoped<AgentIntentRouterService>();
+builder.Services.AddScoped<AgentPendingConfirmationService>();
+
+// 注册 AIShield 安全防护服务，用于 Agent 输入、输出和工具调用检测
+builder.Services.AddHttpClient<AIShieldService>(client =>
+{
+    // 从配置读取 AIShield 后端地址，未配置时使用本地默认端口
+    var baseUrl = builder.Configuration["AIShield:BaseUrl"] ?? "http://localhost:5069";
+
+    // 设置 AIShield HttpClient 的基础地址和超时时间
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
 
 // 注册JwtUtil服务
 builder.Services.AddScoped<JwtUtil>();
@@ -182,6 +216,10 @@ builder.Services.AddScoped<IFunctionInvocationFilter, FunctionInvocationLoggingF
 // 注册临时封面清理后台服务
 builder.Services.AddHostedService<TempCoverCleanupHostedService>();
 
+// 注册雪花ID生成器为单例服务
+var snowflakeConfig = new IdGeneratorOptions { WorkerId = 1 };
+YitIdHelper.SetIdGenerator(snowflakeConfig);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -189,7 +227,10 @@ if (app.Environment.IsDevelopment())
     //app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseStaticFiles();
 app.UseCors("MyPolicy");
 app.UseAuthentication();

@@ -9,7 +9,7 @@ namespace CuteBlogSystem.DTO
         public string? NickName { get; set; }
 
         [Required(ErrorMessage = "头像地址不能为空！")]
-        public string AvatarUrl { get; set; }
+        public string AvatarUrl { get; set; } = string.Empty;
 
         [StringLength(200, ErrorMessage = "个人简介长度不能超过200个字符！")]
         public string? Bio { get; set; }
@@ -18,5 +18,12 @@ namespace CuteBlogSystem.DTO
 
         public List<ArticleSummaryDTO> ArticlesLike { get; set; } = new(); // 用户点赞的文章列表
         public GetUserInformationDTO() { }
+
+        public GetUserInformationDTO(User user)
+        {
+            NickName = user.NickName;
+            Bio = user.Bio;
+            AvatarUrl = user.AvatarUrl;
+        }
     }
 }

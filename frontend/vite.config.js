@@ -5,15 +5,16 @@ export default defineConfig({
   base: "/app/",
   plugins: [vue()],
   server: {
-    port: 5173,
+    host: "0.0.0.0",
+    port: 5174,
     proxy: {
       "/api": {
-        target: "https://localhost:7181",
+        target: "http://127.0.0.1:5125",
         changeOrigin: true,
         secure: false
       },
       "/Picture": {
-        target: "https://localhost:7181",
+        target: "http://127.0.0.1:5125",
         changeOrigin: true,
         secure: false
       }

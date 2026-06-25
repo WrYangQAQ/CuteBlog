@@ -22,6 +22,247 @@ namespace CuteBlogSystem.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentConversation", b =>
+                {
+                    b.Property<string>("SessionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModelUsed")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("SessionId");
+
+                    b.HasIndex("UserId", "UpdatedAt");
+
+                    b.ToTable("AgentConversations");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentConversationMemory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ContextResetAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("ContextResetMessageId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ConversationSummary")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastAnswer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("LastSelectedArticleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LastSelectedArticleTitle")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("LastSummarizedMessageId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("LastUserMessage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("SummaryLastUpdate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
+
+                    b.ToTable("AgentConversationMemories");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentMessage", b =>
+                {
+                    b.Property<long>("MessageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("MessageId"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("TokenCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("MessageId");
+
+                    b.HasIndex("SessionId", "CreatedAt");
+
+                    b.ToTable("AgentMessages");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentPendingConfirmation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ConfirmationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PlanJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("UserMessage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConfirmationId")
+                        .IsUnique();
+
+                    b.HasIndex("SessionId", "Status");
+
+                    b.ToTable("AgentPendingConfirmations");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentWorkflowLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("DurationMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ExecutionResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FailureAnalysis")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("FinishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PlanJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Recovered")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("RecoveryExecutionResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RecoveryPlanJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("UserMessage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AgentWorkflowLogs");
+                });
+
             modelBuilder.Entity("CuteBlogSystem.Entity.Article", b =>
                 {
                     b.Property<int>("Id")
@@ -246,6 +487,28 @@ namespace CuteBlogSystem.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentConversationMemory", b =>
+                {
+                    b.HasOne("CuteBlogSystem.Entity.AgentConversation", "Conversation")
+                        .WithOne("Memory")
+                        .HasForeignKey("CuteBlogSystem.Entity.AgentConversationMemory", "SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentMessage", b =>
+                {
+                    b.HasOne("CuteBlogSystem.Entity.AgentConversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+                });
+
             modelBuilder.Entity("CuteBlogSystem.Entity.Article", b =>
                 {
                     b.HasOne("CuteBlogSystem.Entity.Category", "Category")
@@ -338,6 +601,13 @@ namespace CuteBlogSystem.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("CuteBlogSystem.Entity.AgentConversation", b =>
+                {
+                    b.Navigation("Memory");
+
+                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("CuteBlogSystem.Entity.Article", b =>
