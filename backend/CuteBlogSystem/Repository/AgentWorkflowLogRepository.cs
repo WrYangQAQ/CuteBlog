@@ -30,11 +30,11 @@ namespace CuteBlogSystem.Repository
         }
 
         // 添加新的日志记录
-        public async Task<bool> AddLogAsync(AgentWorkflowLog log)
+        public async Task<int?> AddLogAsync(AgentWorkflowLog log)
         {
             _dbContext.AgentWorkflowLogs.Add(log);
             var affectedRows = await _dbContext.SaveChangesAsync();
-            return affectedRows > 0;
+            return affectedRows > 0 ? log.Id : null;
         }
 
         // 查询指定时间范围内的日志记录

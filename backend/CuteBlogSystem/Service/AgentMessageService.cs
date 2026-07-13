@@ -4,11 +4,8 @@ using CuteBlogSystem.Enum;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Repository;
 using CuteBlogSystem.Util;
-using Microsoft.Extensions.AI;
 using System.Data;
 using CuteBlogSystem.AI.Planner;
-using System.IO.IsolatedStorage;
-using System.Reflection.Metadata.Ecma335;
 
 namespace CuteBlogSystem.Service
 {
@@ -37,14 +34,24 @@ namespace CuteBlogSystem.Service
             // 确保 Conversation 存在，如果不存在则创建新的 Conversation
             var conversation = await _conversationRepository.GetBySessionIdAsync(userMessage.SessionId);
 
-            if (conversation != null)
+            if (conversation != null)   // 会话存在
             {
                 if (conversation.UserId != userMessage.UserId)
                 {
                     return new ApiResponse(false, "当前会话不存在或无权访问！", code: ResponseCode.NotFound);
                 }
-                
-                if (conversation.Status != AgentConversationStatus.Active)
+
+                if (userMessage.IsEvaluation && conversation.Status != AgentConversationStatus.Evaluation)
+                {
+                    return new ApiResponse(false, "评估请求不能写入普通会话！", code: ResponseCode.BadRequest);
+                }
+
+                if (!userMessage.IsEvaluation && conversation.Status == AgentConversationStatus.Evaluation)
+                {
+                    return new ApiResponse(false, "普通请求不能写入评估会话！", code: ResponseCode.BadRequest);
+                }
+
+                if (conversation.Status != AgentConversationStatus.Active && conversation.Status != AgentConversationStatus.Evaluation)
                 {
                     switch (conversation.Status)
                     {
@@ -71,7 +78,7 @@ namespace CuteBlogSystem.Service
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     ModelUsed = "deepseek-v4-pro", // 默认模型
-                    Status = AgentConversationStatus.Active
+                    Status = userMessage.IsEvaluation ? AgentConversationStatus.Evaluation : AgentConversationStatus.Active
                 };
                 userMessage.SessionId = conversation.SessionId; // 将新创建的 SessionId 赋值回用户消息 DTO
                 bool addConversationResult = await _conversationRepository.AddConversationAsync(conversation);
@@ -211,6 +218,11 @@ namespace CuteBlogSystem.Service
                     return new ApiResponse(false, "当前会话不存在或无权访问！", code: ResponseCode.NotFound);
                 }
 
+                if (conversation.Status == AgentConversationStatus.Evaluation)
+                {
+                    return new ApiResponse(false, "评估会话不能通过普通会话接口查看！", code: ResponseCode.BadRequest);
+                }
+
                 var messages = await _messageRepository.GetBySessionIdAsync(sessionId);
                 if (messages == null)
                 {
@@ -296,12 +308,8 @@ namespace CuteBlogSystem.Service
                     return new ApiResponse(false, "当前会话不存在或无权访问！", code: ResponseCode.NotFound);
                 }
 
-                var result = await _conversationRepository.DeleteBySessionIdAsync(sessionId);
-                if (result == false)
-                {
-                    return new ApiResponse(false, "删除会话失败！", code: ResponseCode.InternalError);
-                }
-                return new ApiResponse(true, "删除会话成功！", code: ResponseCode.Success);
+                var response = await _conversationRepository.DeleteBySessionIdAsync(sessionId);
+                return response;
             }
             catch (Exception ex)
             {
@@ -317,28 +325,33 @@ namespace CuteBlogSystem.Service
 
             if (conversation == null || conversation.UserId != userId)
             {
-                return new ApiResponse(false, "当前会话不存在或无权访问！", null, ResponseCode.Unauthorized);
+                return new ApiResponse(false, "当前会话不存在或无权访问！", code: ResponseCode.Unauthorized);
             }
 
             if (conversation.Status == AgentConversationStatus.Deleted)
             {
-                return new ApiResponse(false, "已删除的会话无法进行归档！", null, ResponseCode.BadRequest);
+                return new ApiResponse(false, "已删除的会话无法进行归档！", code: ResponseCode.BadRequest);
             }
 
             if (conversation.Status == AgentConversationStatus.Archived)
             {
-                return new ApiResponse(false, "该会话已经归档。", null, ResponseCode.BadRequest);
+                return new ApiResponse(false, "该会话已经归档。", code: ResponseCode.BadRequest);
+            }
+
+            if (conversation.Status == AgentConversationStatus.Evaluation)
+            {
+                return new ApiResponse(false, "该会话为Agent评估用测试会话，不可归档!", code: ResponseCode.BadRequest);
             }
 
             var updateSucess = await _conversationRepository.UpdateStatusAsync(sessionId, AgentConversationStatus.Archived);
 
             if (updateSucess)
             {
-                return new ApiResponse(true, "会话归档成功！", null, ResponseCode.Success);
+                return new ApiResponse(true, "会话归档成功！", code: ResponseCode.Success);
             }
             else
             {
-                return new ApiResponse(true, "会话归档失败！", null, ResponseCode.InternalError);
+                return new ApiResponse(false, "会话归档失败！", code: ResponseCode.InternalError);
             }
         }
 
@@ -371,6 +384,14 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(
                     true,
                     "该会话已经处于活跃状态。",
+                    code: ResponseCode.Success);
+            }
+
+            if (conversation.Status == AgentConversationStatus.Evaluation)
+            {
+                return new ApiResponse(
+                    true,
+                    "该会话为评估用会话，不在归档列表！",
                     code: ResponseCode.Success);
             }
 

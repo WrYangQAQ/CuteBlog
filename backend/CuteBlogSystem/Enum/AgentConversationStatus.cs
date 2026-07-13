@@ -4,6 +4,7 @@
     {
         Active = 1,
         Archived = 2,
-        Deleted = 3
+        Deleted = 3,
+        Evaluation = 4
     }
 }

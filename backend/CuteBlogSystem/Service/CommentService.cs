@@ -117,22 +117,14 @@ namespace CuteBlogSystem.Service
             }
             
             List<Comment> comments = await _commentRepository.GetCommentsByArticleIdAsync(articleId);
-            List<GetCommentDTO> commentDTOs = new List<GetCommentDTO>();
 
             // 将评论列表转换为DTO列表
-            foreach (var comment in comments)
-            {
-                User? user = await _userRepository.GetUserByIdAsync(comment.UserId);
-                if (user != null)
-                {
-                    comment.User = user; // 将用户信息附加到评论对象中
-                }
-                GetCommentDTO commentDTO = new GetCommentDTO(comment);
-                commentDTOs.Add(commentDTO);
-            }
+            var commentDTOs = comments.Select(comment => new GetCommentDTO(comment)).ToList();
 
             // 对评论列表进行排序，先按创建时间升序排序，再按用户昵称升序排序
-            commentDTOs = commentDTOs.OrderBy(c => c.CreatedAt).ThenBy(c => c.UserName).ToList();
+            commentDTOs = commentDTOs
+                .OrderBy(c => c.CreatedAt)
+                .ThenBy(c => c.UserName).ToList();
 
             return new ApiResponse(true, "获取评论列表成功！", data: commentDTOs);
 
@@ -169,7 +161,7 @@ namespace CuteBlogSystem.Service
         // 删除留言
         public async Task<ApiResponse> DeleteMessageAsync(int commentId, int userId)
         {
-            Comment comment = await _commentRepository.GetCommentByIdAsync(commentId);
+            Comment? comment = await _commentRepository.GetCommentByIdAsync(commentId);
 
             if (comment == null)
             {

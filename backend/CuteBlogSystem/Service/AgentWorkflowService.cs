@@ -3,7 +3,7 @@ using CuteBlogSystem.DTO;
 using CuteBlogSystem.DTO.Agent;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
-using System.Diagnostics;
+using System.Numerics;
 
 namespace CuteBlogSystem.Service
 {
@@ -23,6 +23,8 @@ namespace CuteBlogSystem.Service
         private readonly AIShieldService _aiShieldService;                              // AIShield 安全检测服务
         private readonly AgentIntentRouterService _routerService;                       // 路由解析
         private readonly AgentPendingConfirmationService _pendingConfirmationService;   // plan待确认记录服务
+        private readonly AgentParameterPermissionService _paramPermissionService;       // 参数权限校验
+        private readonly AgentParameterRiskService _paramRiskService;                   // 参数风险校验
         private static readonly TimeSpan WorkflowTimeout = TimeSpan.FromSeconds(90);    // 工作流总超时时间，防止长时间挂起
         private static readonly TimeSpan DirectChatTimeout = TimeSpan.FromSeconds(20);  // DirectChat总超时时间，防止长时间挂起
         private const int MaxPlanRepairAttempts = 3;                                    // 最大重试次数，防止无限循环
@@ -42,7 +44,9 @@ namespace CuteBlogSystem.Service
             AgentMessageService agentMessageService,
             AIShieldService aiShieldService,
             AgentIntentRouterService routerService,
-            AgentPendingConfirmationService agentPendingConfirmationService)
+            AgentPendingConfirmationService agentPendingConfirmationService,
+            AgentParameterPermissionService paramPermissionService,
+            AgentParameterRiskService paramRiskService)
         {
             _aiPlannerService = aiPlannerService;
             _agentPlanValidator = agentPlanValidator;
@@ -57,10 +61,12 @@ namespace CuteBlogSystem.Service
             _aiShieldService = aiShieldService;
             _routerService = routerService;
             _pendingConfirmationService = agentPendingConfirmationService;
+            _paramPermissionService = paramPermissionService;
+            _paramRiskService = paramRiskService;
         }
 
         // 处理用户消息的入口，返回最终响应（含调试信息可选）
-        public async Task<AgentAskResponse> AskAsync(AgentUserMessage userMessage, bool debug = false)
+        public async Task<AgentAskResponse> AskAsync(AgentUserMessage userMessage, int userId, bool debug = false)
         {
             // 验证用户身份
             if (userMessage.UserId <= 0)
@@ -267,7 +273,7 @@ namespace CuteBlogSystem.Service
 
                     
                     // 执行核心工作流（规划、校验、执行、失败处理等）
-                    response = await ExecuteWorkflowAsync(workflowMessage, userMessage).WaitAsync(WorkflowTimeout);
+                    response = await ExecuteWorkflowAsync(workflowMessage, userMessage, userId).WaitAsync(WorkflowTimeout);
                 }
                 catch (TimeoutException ex)
                 {
@@ -377,10 +383,66 @@ namespace CuteBlogSystem.Service
                         debug);
                 }
 
+                var permissionResult = await _paramPermissionService.ValidateAsync(confirmedPlan.Plan, userId);
+
+                if (!permissionResult.IsValid)
+                {
+                    response = new AgentAskResponse
+                    {
+                        Success = false,
+                        Recovered = false,
+                        Message = "确认计划参数权限校验失败",
+                        Answer = "抱歉，这个操作涉及你无权访问或无权修改的资源。",
+                        Debug = debug
+                            ? new AgentDebugInfo
+                            {
+                                Plan = confirmedPlan.Plan,
+                                ValidationErrors = permissionResult.Errors
+                            }
+                            : null
+                    };
+
+                    return await FinalizeAgentResponseAsync(
+                        response,
+                        confirmedPlan.UserMessage,
+                        confirmedPlan.SessionId,
+                        userId,
+                        startedAt,
+                        debug);
+                }
+
+                var riskParamResult = _paramRiskService.Validate(confirmedPlan.Plan);
+
+                if (!riskParamResult.IsSafe)
+                {
+                    response = new AgentAskResponse
+                    {
+                        Success = false,
+                        Recovered = false,
+                        Message = "确认计划参数风险校验失败",
+                        Answer = "抱歉，这个操作的参数存在较高风险，我暂时不能直接执行。请你重新描述要修改的内容。",
+                        Debug = debug
+                            ? new AgentDebugInfo
+                            {
+                                Plan = confirmedPlan.Plan,
+                                ValidationErrors = riskParamResult.Errors
+                            }
+                            : null
+                    };
+
+                    return await FinalizeAgentResponseAsync(
+                        response,
+                        confirmedPlan.UserMessage,
+                        confirmedPlan.SessionId,
+                        userId,
+                        startedAt,
+                        debug);
+                }
+
                 try
                 {
                     // 执行批准后的计划并获取响应
-                    response = await ExecuteApprovedPlanAsync(confirmedPlan.Plan, confirmedPlan.UserMessage);
+                    response = await ExecuteApprovedPlanAsync(confirmedPlan.Plan, confirmedPlan.UserMessage, userId);
 
                     // 对返回的响应做最后处理，包括安全检测、消息保存等等
                     return await FinalizeAgentResponseAsync
@@ -434,7 +496,7 @@ namespace CuteBlogSystem.Service
         }
 
         // 执行完整的 Agent 工作流，返回包含成功状态、消息、答案和调试信息的响应对象
-        private async Task<AgentAskResponse> ExecuteWorkflowAsync(string workflowMessage, AgentUserMessage userMessage)
+        private async Task<AgentAskResponse> ExecuteWorkflowAsync(string workflowMessage, AgentUserMessage userMessage, int userId)
         {
             _logger.LogInformation("AgentWorkflow 开始处理用户问题：{Message}", workflowMessage);
 
@@ -489,45 +551,83 @@ namespace CuteBlogSystem.Service
                 return CreateForbiddenActionResponse();
             }    // 当含有被禁止的动作时返回失败响应
 
-            else if (riskLevel == AgentActionRiskLevel.RequireConfirmation)
+            else
             {
-                var confirmationId = await _pendingConfirmationService.CreateAsync(
-                    userMessage.SessionId, 
-                    userMessage.UserId.ToString(), 
-                    userMessage.Content, 
-                    plan);
-
-                // 校验 confirmationId 是否为空
-                if (string.IsNullOrWhiteSpace(confirmationId))
+                var permissionResult = await _paramPermissionService.ValidateAsync(plan, userId);
+                if (!permissionResult.IsValid)
                 {
                     return new AgentAskResponse
                     {
                         Success = false,
                         Recovered = false,
-                        Message = "创建确认请求失败",
-                        Answer = "这个操作需要确认，但系统暂时无法创建确认请求，请稍后重试。"
+                        Message = "计划参数权限校验失败",
+                        Answer = "抱歉，这个操作涉及你无权访问或无权修改的资源。",
+                        Debug = new AgentDebugInfo
+                        {
+                            Plan = plan,
+                            ValidationErrors = permissionResult.Errors
+                        }
                     };
                 }
 
-                return new AgentAskResponse
+                var riskParamResult = _paramRiskService.Validate(plan);
+
+                if (!riskParamResult.IsSafe)
                 {
-                    Success = false,
-                    Recovered = false,
-                    RequiresConfirmation = true,
-                    ConfirmationId = confirmationId,
-                    ConfirmationSummary = BuildConfirmationSummary(plan),
-                    Message = "该操作需要用户确认",
-                    Answer = "这个操作需要你确认之后才能执行。"
-                };
+                    return new AgentAskResponse
+                    {
+                        Success = false,
+                        Recovered = false,
+                        Message = "计划参数风险校验失败",
+                        Answer = "抱歉，这个操作的参数存在较高风险，我暂时不能直接执行。请你重新描述要修改的内容。",
+                        Debug = new AgentDebugInfo
+                        {
+                            Plan = plan,
+                            ValidationErrors = riskParamResult.Errors
+                        }
+                    };
+                }
 
-            }  // 当最高风险动作需确认时，返回确认响应
+                if (riskLevel == AgentActionRiskLevel.RequireConfirmation)
+                {
+                    var confirmationId = await _pendingConfirmationService.CreateAsync(
+                        userMessage.SessionId,
+                        userMessage.UserId.ToString(),
+                        userMessage.Content,
+                        plan);
 
-            else
-            {
-                return await ExecuteApprovedPlanAsync(plan, userMessage.Content);
-            }    // 正常执行plan
+                    // 校验 confirmationId 是否为空
+                    if (string.IsNullOrWhiteSpace(confirmationId))
+                    {
+                        return new AgentAskResponse
+                        {
+                            Success = false,
+                            Recovered = false,
+                            Message = "创建确认请求失败",
+                            Answer = "这个操作需要确认，但系统暂时无法创建确认请求，请稍后重试。"
+                        };
+                    }
 
-            
+
+
+                    return new AgentAskResponse
+                    {
+                        Success = false,
+                        Recovered = false,
+                        RequiresConfirmation = true,
+                        ConfirmationId = confirmationId,
+                        ConfirmationSummary = BuildConfirmationSummary(plan),
+                        Message = "该操作需要用户确认",
+                        Answer = "这个操作需要你确认之后才能执行。"
+                    };
+                }   // 当最高风险动作需确认时，返回确认响应
+
+                else
+                {
+                    return await ExecuteApprovedPlanAsync(plan, userMessage.Content, userId);
+                }    // 正常执行plan
+
+            }
         }
 
         // 生成补救计划的辅助方法，限制尝试次数，避免过度复杂化
@@ -675,10 +775,10 @@ namespace CuteBlogSystem.Service
         }
 
         // 对批准执行的 plan 进行执行
-        private async Task<AgentAskResponse> ExecuteApprovedPlanAsync(AgentPlan plan, string userMessage)
+        private async Task<AgentAskResponse> ExecuteApprovedPlanAsync(AgentPlan plan, string userMessage, int userId)
         {
             // 执行计划并获取执行结果
-            var executionResult = await _agentPlanExecutor.ExecuteAsync(plan);
+            var executionResult = await _agentPlanExecutor.ExecuteAsync(plan, userId);
 
             // 检查执行结果中是否存在失败步骤
             var hasFailedStep = executionResult.StepResults.Any(s => !s.Success);
@@ -793,6 +893,11 @@ namespace CuteBlogSystem.Service
                 if (!saveResponse.Success)
                 {
                     _logger.LogError("保存 AgentWorkflow 日志失败：{Message}", saveResponse.Message);
+                }
+
+                else if (saveResponse.Data is int workflowLogId)
+                {
+                    response.WorkflowLogId = workflowLogId;
                 }
             }
             catch (Exception ex)

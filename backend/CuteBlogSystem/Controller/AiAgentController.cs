@@ -1,9 +1,11 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.DTO;
 using CuteBlogSystem.DTO.Agent;
+using CuteBlogSystem.Enum;
 using CuteBlogSystem.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Data;
 using System.Security.Claims;
 
 namespace CuteBlogSystem.Controller
@@ -18,6 +20,7 @@ namespace CuteBlogSystem.Controller
         private readonly AgentWorkflowLogService _workflowLogService;
         private readonly AgentMessageService _messageService;
         private readonly AgentPendingConfirmationService _pendingConfirmationService;
+        private readonly AgentEvaluationService _evaluationService;
         private readonly ILogger<AiAgentController> _logger;
 
         public AiAgentController(AiAgentService agentService,
@@ -26,7 +29,8 @@ namespace CuteBlogSystem.Controller
                                  AgentWorkflowService workflowService,
                                  AgentWorkflowLogService workflowLogService,
                                  AgentMessageService messageService,
-                                 AgentPendingConfirmationService pendingConfirmationService)
+                                 AgentPendingConfirmationService pendingConfirmationService,
+                                 AgentEvaluationService evaluationService)
         {
             _agentService = agentService;
             _logger = logger;
@@ -35,6 +39,7 @@ namespace CuteBlogSystem.Controller
             _workflowLogService = workflowLogService;
             _messageService = messageService;
             _pendingConfirmationService = pendingConfirmationService;
+            _evaluationService = evaluationService;
         }
 
         [HttpPost("ask")]
@@ -98,7 +103,7 @@ namespace CuteBlogSystem.Controller
 
             agentUserMessage.UserId = userId;
 
-            var response = await _workflowService.AskAsync(agentUserMessage, debug);
+            var response = await _workflowService.AskAsync(agentUserMessage, userId, debug);
 
             return Ok(response);
         }
@@ -301,6 +306,168 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetRecentWorkflowLogs([FromQuery] int count = 20)
         {
             var response = await _workflowLogService.GetRecentLogAsync(count);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPost("evaluation/run")]
+        public async Task<IActionResult> EvaluateAllCases([FromBody] List<int> caseIds)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                  ?? User.FindFirst("userId")
+                  ?? User.FindFirst("sub");
+
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId) || userId <= 0)
+            {
+                return Unauthorized("无法从令牌中解析用户标识");
+            }
+
+            var response = await _evaluationService.RunWithCaseAsync(userId, caseIds);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/recent")]
+        public async Task<IActionResult> GetRecentEvaluationRuns([FromQuery] int recentCount = 10)
+        {
+            var response = await _evaluationService.GetRecentCountRunAsync(recentCount);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/{runId}/results")]
+        public async Task<IActionResult> GetRunResults([FromRoute] long runId)
+        {
+            var response = await _evaluationService.GetResultsByRunIdAsync(runId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/test-cases")]
+        public async Task<IActionResult> GetTestCases([FromQuery] int status)
+        {
+            var response = await _evaluationService.GetTestCasesByStatusAsync(status);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPost("evaluation/test-cases")]
+        public async Task<IActionResult> AddTestCase([FromBody] AgentTestCaseAddDto testCase)
+        {
+            var response = await _evaluationService.CreateTestCaseAsync(testCase);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPut("evaluation/test-cases")]
+        public async Task<IActionResult> UpdateTestCase([FromBody] AgentTestCaseUpdateDto testCase)
+        {
+            var response = await _evaluationService.UpdateTestCaseAsync(testCase);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpDelete("evaluation/test-cases")]
+        public async Task<IActionResult> DeleteTestCase([FromQuery] int caseId)
+        {
+            var response = await _evaluationService.DeleteTestCaseAsync(caseId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPatch("evaluation/test-cases")]
+        public async Task<IActionResult> UpdateCaseStatus([FromQuery] int caseId)
+        {
+            var response = await _evaluationService.UpdateTestCaseStatusAsync(caseId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/{runId}/test-cases/{caseId}/workflow-log")]
+        public async Task<IActionResult> GetWorkflowLogByCaseId([FromRoute] long runId, [FromRoute] int caseId)
+        {
+            var response = await _evaluationService.GetWorkflowLogByCaseIdAsync(runId, caseId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/{runId}/report")]
+        public async Task<IActionResult> GetEvaluationReport([FromRoute] long runId, [FromQuery] bool download = false)
+        {
+            var response = await _evaluationService.GetEvaluationReportAsync(runId);
+            if (!download)
+            {
+                return ReturnResponse(response);
+            }
+            if (!response.Success)
+            {
+                return ReturnResponse(response);
+            }
+
+            if (response.Data is not AgentEvaluationReportDTO dto)
+            {
+                return ReturnResponse(new ApiResponse(
+                    false,
+                    "评估报告数据格式错误！",
+                    code: ResponseCode.InternalError
+                ));
+            }
+
+            var markdown = dto.Markdown ?? string.Empty;
+            var fileName = string.IsNullOrWhiteSpace(dto.FileName)
+                ? $"EvaluationReport_Run{runId}_{DateTime.UtcNow:yyyyMMddHHmmss}.md"
+                : dto.FileName;
+
+            var fileBytes = System.Text.Encoding.UTF8.GetBytes(markdown);
+
+            return File(fileBytes, "text/markdown; charset=utf-8", fileName);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/compare")]
+        public async Task<IActionResult> CompareEvaluationRuns([FromQuery] long baseRunId, [FromQuery] long targetRunId)
+        {
+            var response = await _evaluationService.CompareEvaluationRunsAsync(baseRunId, targetRunId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/regression-summary")]
+        public async Task<IActionResult> GetEvalutaionRegressionSummary([FromQuery] long baseRunId, [FromQuery] long targetRunId)
+        {
+            var response = await _evaluationService.GetRegressionSummaryAsync(baseRunId, targetRunId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPost("evaluation/runs/{runId}/rerun")]
+        public async Task<IActionResult> CreateEvaluationRun([FromRoute] long runId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                  ?? User.FindFirst("userId")
+                  ?? User.FindFirst("sub");
+
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId) || userId <= 0)
+            {
+                return Unauthorized("无法从令牌中解析用户标识");
+            }
+            var response = await _evaluationService.RunWithSnapshotAsync(userId, runId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPost("evaluation/runs/{runId}/report/snapshot")]
+        public async Task<IActionResult> CreateEvaluationReportSnapshot([FromRoute] long runId)
+        {
+            var response = await _evaluationService.SaveRunSnapshotAsync(runId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("evaluation/runs/{runId}/report/snapshot")]
+        public async Task<IActionResult> GetEvaluationReportSnapshot([FromRoute] long runId)
+        {
+            var response = await _evaluationService.GetSnapshotByRunIdAsync(runId);
             return ReturnResponse(response);
         }
     }

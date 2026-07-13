@@ -20,6 +20,7 @@ namespace CuteBlogSystem.Service
         private readonly TagRepository _tagRepository;
         private readonly MyDbContext _dbContext; // 用于事务处理
         private readonly ILogger<ArticleService> _logger;
+        private readonly IConfiguration _configuration;
 
         public ArticleService(ArticleRepository articleRepository,
                               ArticleLikeRepository articleLikeRepository,
@@ -29,7 +30,8 @@ namespace CuteBlogSystem.Service
                               CategoryRepository categoryRepository,
                               TagRepository tagRepository,
                               MyDbContext dbContext,
-                              ILogger<ArticleService> logger)
+                              ILogger<ArticleService> logger,
+                              IConfiguration configuration)
         {
             _articleRepository = articleRepository;
             _articleLikeRepository = articleLikeRepository;
@@ -40,6 +42,7 @@ namespace CuteBlogSystem.Service
             _tagRepository = tagRepository;
             _dbContext = dbContext;
             _logger = logger;
+            _configuration = configuration;
         }
 
         // 获取所有文章列表
@@ -51,7 +54,7 @@ namespace CuteBlogSystem.Service
                 List<Article> articles = await _articleRepository.GetArticlesAsync();
 
                 // 将文章列表转换为 DTO
-                var articleListDTOs = articles.Select(article => 
+                var articleListDTOs = articles.Select(article =>
                     new GetArticleListDTO(article)).ToList();
 
                 // 对文章按发布时间进行降序排序
@@ -420,10 +423,22 @@ namespace CuteBlogSystem.Service
                 }
 
                 // 更新除标签外的文章内容
-                article.Title = updateArticleDTO.Title;
-                article.Summary = updateArticleDTO.Summary;
-                article.Content = updateArticleDTO.Content;
-                article.CategoryId = updateArticleDTO.CategoryId;
+                if (!string.IsNullOrWhiteSpace(updateArticleDTO.Title))
+                {
+                    article.Title = updateArticleDTO.Title;
+                }
+                if (!string.IsNullOrWhiteSpace(updateArticleDTO.Summary))
+                {
+                    article.Summary = updateArticleDTO.Summary;
+                }
+                if (!string.IsNullOrWhiteSpace(updateArticleDTO.Content))
+                {
+                    article.Content = updateArticleDTO.Content;
+                }
+                if (updateArticleDTO.CategoryId != 0)
+                {
+                    article.CategoryId = updateArticleDTO.CategoryId;
+                }
                 article.UpdatedAt = DateTime.UtcNow;
 
                 // 更新标签
@@ -472,6 +487,54 @@ namespace CuteBlogSystem.Service
             }
         }
 
+        // 只编辑文章内容
+        public async Task<ApiResponse> UpdateArticleContentAsync(int articleId, string newContent, int userId)
+        {
+            try
+            {
+                Article article = await _articleRepository.GetArticleByIdAsync(articleId);
+                if (article == null)
+                {
+                    return new ApiResponse(false, $"未找到ID为{articleId}的文章！");
+                }
+                // 验证是否为文章作者本人或者是管理员
+                if (!await CheckArticleAuthorOrAdminAsync(articleId, userId))
+                {
+                    return new ApiResponse(false, $"没有权限编辑这篇文章！", code: ResponseCode.Unauthorized);
+                }
+
+                if (string.IsNullOrWhiteSpace(newContent))
+                {
+                    return new ApiResponse(false, "文章内容不能为空！", code: ResponseCode.BadRequest);
+                }
+
+                var oldContentLength = article.Content?.Length ?? 0;
+
+                article.Content = newContent;
+                var newContentLength = newContent.Length;
+
+                article.UpdatedAt = DateTime.UtcNow;
+
+                var updateInfoDto = new UpdateArticleInformation
+                {
+                    ArticleId = articleId,
+                    Title = article.Title,
+                    OldLength = oldContentLength,
+                    NewLength = newContentLength,
+                    UpdatedAt = article.UpdatedAt
+                };
+
+                await _articleRepository.UpdateArticleAsync(article);
+                return new ApiResponse(true, "编辑文章内容成功！", updateInfoDto, ResponseCode.Success);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                _logger.LogError(ex, $"编辑文章内容失败！\nex.message:{ex.Message}");
+                return new ApiResponse(false, $"编辑文章内容失败！", code: ResponseCode.UpdateFailed);
+            }
+        }
+
         // 置顶文章
         public async Task<ApiResponse> ToggleArticleTopAsync(int articleId)
         {
@@ -503,9 +566,9 @@ namespace CuteBlogSystem.Service
             {
                 // 调用仓储层获取置顶文章列表
                 List<Article> topArticles = await _articleRepository.GetTopArticlesAsync();
-                
+
                 // 将置顶文章列表转换为 DTO
-                var topArticleDTOs = topArticles.Select(article =>  new GetArticleListDTO(article));
+                var topArticleDTOs = topArticles.Select(article => new GetArticleListDTO(article));
 
                 // 返回成功响应
                 return new ApiResponse(true, "获取置顶文章列表成功！", topArticleDTOs);
@@ -758,34 +821,25 @@ namespace CuteBlogSystem.Service
             else
             {
                 List<int> articleIds = await _articleTagRepository.GetArticleIdsByTagIdAsync(tagId.Value);
-                List<Article> articles = await _articleRepository.GetArticlesByIdsAsync(articleIds);
-                List<GetArticleListDTO> articleListDTOs = new List<GetArticleListDTO>();
-                foreach (int i in articleIds)
+
+                if (articleIds == null || articleIds.Count == 0)
                 {
-                    articleListDTOs.Add(new GetArticleListDTO(articles.FirstOrDefault(a => a.Id == i)!));
+                    return new ApiResponse(true, $"没有找到标签'{tagName}'下的文章", new List<GetArticleListDTO>());
                 }
+
+                List<Article> articles = await _articleRepository.GetArticlesByIdsAsync(articleIds);
+
+                var articleDict = articles.ToDictionary(a => a.Id);
+
+                var articleListDTOs = articleIds
+                    .Select(id => articleDict.TryGetValue(id, out var article)
+                        ? new GetArticleListDTO(article)
+                        : null)
+                    .Where(dto => dto != null) // 过滤掉缺失的
+                    .ToList();
+
                 return new ApiResponse(true, $"根据标签名'{tagName}'查询文章列表成功！", articleListDTOs);
             }
-        }
-
-        // 根据文章id查询对应文章具体内容(id集合多次查询)
-        public async Task<List<string>> GetArticleContentByIdAsync(List<int> articleIds)
-        {
-            List<Article> articles = await _articleRepository.GetArticlesByIdsAsync(articleIds);
-            List<string> result = new List<string>();
-            foreach (int id in articleIds)
-            {
-                Article? article = articles.FirstOrDefault(a => a.Id == id);
-                if (article != null)
-                {
-                    result.Add($"文章ID: {article.Id}\n标题: {article.Title}\n内容: {article.Content}\n\n");
-                }
-                else
-                {
-                    result.Add($"未找到ID为{id}的文章！\n\n");
-                }
-            }
-            return result;
         }
 
         // 根据文章id查询对应标签列表(单次查询文章，批量查询标签)
@@ -799,6 +853,59 @@ namespace CuteBlogSystem.Service
             List<int> tagIds = await _articleTagRepository.GetTagIdsByArticleIdAsync(articleId);
             List<string> tagNames = await _tagRepository.GetTagNamesByIdsAsync(tagIds);
             return new ApiResponse(true, $"根据文章ID'{articleId}'查询标签列表成功！", tagNames);
+        }
+
+        // 根据文章Id更新对应文章标题
+        public async Task<ApiResponse> UpdateArticleTitleAsync(int articleId, string? newTitle, int userId)
+        {
+            var MessageBoardId = _configuration.GetValue<int>("MessageBoardId");
+            if (articleId == MessageBoardId)
+            {
+                return new ApiResponse(false, $"留言板文章标题不允许修改！", code: ResponseCode.BadRequest);
+            }
+            else if(articleId <= 0)
+            {
+                return new ApiResponse(false, $"文章ID不合法！", code: ResponseCode.BadRequest);
+            }
+
+            if (string.IsNullOrWhiteSpace(newTitle))
+            {
+                return new ApiResponse(false, $"文章标题不能为空！", code: ResponseCode.BadRequest);
+            }
+
+            if (newTitle.Length > 30)
+            {
+                return new ApiResponse(false, $"文章标题长度不能超过30个字符！", code: ResponseCode.BadRequest);
+            }
+
+            try
+            {
+                Article article = await _articleRepository.GetArticleByIdAsync(articleId);
+                if (article == null)
+                {
+                    return new ApiResponse(false, $"未找到ID为{articleId}的文章！", code: ResponseCode.ArticleNotFound);
+                }
+
+                var oldTitle = article.Title;
+
+                // 验证是否为文章作者本人或者是管理员
+                if (!await CheckArticleAuthorOrAdminAsync(articleId, userId))
+                {
+                    return new ApiResponse(false, $"您不是这篇文章的作者或管理员，没有权限编辑这篇文章！", code: ResponseCode.Unauthorized);
+                }
+
+                article.Title = newTitle;
+                article.UpdatedAt = DateTime.UtcNow;
+                await _articleRepository.UpdateArticleAsync(article);
+                
+                var dto = new UpdateArticleTitleDTO(articleId, oldTitle, newTitle, article.UpdatedAt);
+                return new ApiResponse(true, "更新文章标题成功！", dto, ResponseCode.Success);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"更新文章标题失败！\nex.message:{ex.Message}");
+                return new ApiResponse(false, $"更新文章标题失败！", code: ResponseCode.UpdateFailed);
+            }
         }
     }
 }

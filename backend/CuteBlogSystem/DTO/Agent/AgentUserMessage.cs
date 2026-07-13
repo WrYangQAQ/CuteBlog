@@ -15,5 +15,8 @@ namespace CuteBlogSystem.DTO.Agent
 
         // 用户身份
         public AgentMessageRole Role { get; set; } = AgentMessageRole.User;
+
+        // 该条消息是否为评测/测试用消息
+        public bool IsEvaluation { get; set; }
     }
 }

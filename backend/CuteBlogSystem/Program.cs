@@ -112,6 +112,10 @@ builder.Services.AddScoped<AgentConversationMemoryRepository>();
 builder.Services.AddScoped<AgentConversationRepository>();
 builder.Services.AddScoped<AgentMessageRepository>();
 builder.Services.AddScoped<AgentPendingConfirmationRepository>();
+builder.Services.AddScoped<AgentTestCaseRepository>();
+builder.Services.AddScoped<AgentEvaluationResultRepository>();
+builder.Services.AddScoped<AgentEvaluationRunRepository>();
+builder.Services.AddScoped<AgentEvaluationReportSnapshotRepository>();
 
 // 注册自定义服务
 builder.Services.AddScoped<UserService>();
@@ -135,6 +139,9 @@ builder.Services.AddScoped<AgentConversationMemoryService>();
 builder.Services.AddScoped<AgentMessageService>();
 builder.Services.AddScoped<AgentIntentRouterService>();
 builder.Services.AddScoped<AgentPendingConfirmationService>();
+builder.Services.AddScoped<AgentEvaluationService>();
+builder.Services.AddScoped<AgentParameterPermissionService>();
+builder.Services.AddScoped<AgentParameterRiskService>();
 
 // 注册 AIShield 安全防护服务，用于 Agent 输入、输出和工具调用检测
 builder.Services.AddHttpClient<AIShieldService>(client =>

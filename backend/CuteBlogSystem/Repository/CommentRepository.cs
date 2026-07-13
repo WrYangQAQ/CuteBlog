@@ -70,6 +70,7 @@ namespace CuteBlogSystem.Repository
         {
             return await _dbContext.Comments
                 .Where(c => c.ArticleId == articleId)
+                .Include(c => c.User)
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync<Comment>();
         }

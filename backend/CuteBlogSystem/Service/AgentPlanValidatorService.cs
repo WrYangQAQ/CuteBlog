@@ -1,4 +1,5 @@
 ﻿using CuteBlogSystem.AI.Planner;
+using CuteBlogSystem.Util;
 using System.Text.Json;
 
 namespace CuteBlogSystem.Service
@@ -110,6 +111,21 @@ namespace CuteBlogSystem.Service
                     RequireIntParameter(step, "contentFromStepB", errors);
                     break;
 
+                case AgentActionRegistry.UpdateArticleTitle:
+                    ValidateUpdateArticleTitleParameters(step, errors);
+                    break;
+
+                case AgentActionRegistry.GetMyArticles:
+                    ValidateGetMyArticlesParameters(step, errors);
+                    break;
+
+                case AgentActionRegistry.GenerateContentRevision:
+                    ValidateGenerateContentRevisionParameters(step, errors);
+                    break;
+                case AgentActionRegistry.UpdateArticleContent:
+                    ValidateUpdateArticleContentParameters(step, errors);
+                    break;
+
                 case AgentActionRegistry.GetAllCategories:
                     // 无特定参数要求
                     break;
@@ -122,6 +138,10 @@ namespace CuteBlogSystem.Service
                 case AgentActionRegistry.AnswerQuestionFromContent:
                     RequireIntParameter(step, "contentFromStep", errors);
                     RequireStringParameter(step, "question", errors);
+                    break;
+
+                case AgentActionRegistry.DeleteArticle:
+                    ValidateDeleteArticleParameters(step, errors);
                     break;
             }
         }
@@ -185,6 +205,25 @@ namespace CuteBlogSystem.Service
 
                 case AgentActionRegistry.AnswerQuestionFromContent:
                     ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    break;
+
+                case AgentActionRegistry.GenerateContentRevision:
+                    if (GetIntParameter(step, "contentFromStep") > 0)
+                        ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    break;
+
+                case AgentActionRegistry.UpdateArticleContent:
+                    if (GetIntParameter(step, "articleIdFromStep") > 0)
+                        ValidateReferenceToPreviousStep(step, plan, "articleIdFromStep", errors);
+                    if (GetIntParameter(step, "newContentFromStep") > 0)
+                        ValidateReferenceToPreviousStep(step, plan, "newContentFromStep", errors);
+                    break;
+
+                case AgentActionRegistry.DeleteArticle:
+                    if (GetIntParameter(step, "articleIdFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "articleIdFromStep", errors);
+                    }
                     break;
             }
         }
@@ -264,19 +303,7 @@ namespace CuteBlogSystem.Service
             string key,
             string defaultValue = "")
         {
-            if (!step.Parameters.TryGetValue(key, out var value) || value == null)
-            {
-                return defaultValue;
-            }
-
-            if (value is JsonElement jsonElement)
-            {
-                return jsonElement.ValueKind == JsonValueKind.String
-                    ? jsonElement.GetString() ?? defaultValue
-                    : jsonElement.ToString();
-            }
-
-            return value.ToString() ?? defaultValue;
+            return AiChatHelper.GetString(step.Parameters, key, defaultValue);
         }
 
         // 从参数字典中安全获取整数值（兼容 JsonElement 数字或字符串数字）
@@ -285,31 +312,7 @@ namespace CuteBlogSystem.Service
             string key,
             int defaultValue = 0)
         {
-            if (!step.Parameters.TryGetValue(key, out var value) || value == null)
-            {
-                return defaultValue;
-            }
-
-            if (value is JsonElement jsonElement)
-            {
-                if (jsonElement.ValueKind == JsonValueKind.Number &&
-                    jsonElement.TryGetInt32(out var number))
-                {
-                    return number;
-                }
-
-                if (jsonElement.ValueKind == JsonValueKind.String &&
-                    int.TryParse(jsonElement.GetString(), out var stringNumber))
-                {
-                    return stringNumber;
-                }
-
-                return defaultValue;
-            }
-
-            return int.TryParse(value.ToString(), out var result)
-                ? result
-                : defaultValue;
+            return AiChatHelper.GetInt(step.Parameters, key, defaultValue);
         }
 
         // 专门验证补救计划的合法性，除了基本结构和参数校验外，还要检查 ExplainFailureWithSuggestions 的特殊引用关系
@@ -375,6 +378,128 @@ namespace CuteBlogSystem.Service
             return errors.Count == 0
                 ? AgentPlanValidationResult.Success()
                 : AgentPlanValidationResult.Fail(errors);
+        }
+
+        // 验证 UpdateArticleTitle 动作的参数：articleId 必须大于 0，newTitle 不能为空且长度不超过 30
+        private static void ValidateUpdateArticleTitleParameters(
+            AgentPlanStep step,
+            List<string> errors)
+        {
+            var articleId = GetIntParameter(step, "articleId");
+            if (articleId <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 articleId 必须大于 0。");
+            }
+
+            var newTitle = GetStringParameter(step, "newTitle");
+            if (string.IsNullOrWhiteSpace(newTitle))
+            {
+                errors.Add($"Step {step.StepNumber} 缺少 newTitle 参数。");
+                return;
+            }
+
+            if (newTitle.Length > 30)
+            {
+                errors.Add($"Step {step.StepNumber} 的 newTitle 不能超过 30 个字符。");
+            }
+        }
+
+        // 验证 GetMyArticles 动作的参数：page 必须大于 0，pageSize 必须在 1~20 之间
+        private static void ValidateGetMyArticlesParameters(
+            AgentPlanStep step,
+            List<string> errors)
+        {
+            // 获取并验证 page 参数（可选，若存在则必须大于 0）
+            int? page = GetIntParameter(step, "page");
+            if (page.HasValue && page.Value <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 page 必须大于 0。");
+            }
+
+            // 获取并验证 pageSize 参数（可选，若存在则必须在 1~20 之间）
+            int? pageSize = GetIntParameter(step, "pageSize");
+            if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value > 20))
+            {
+                errors.Add($"Step {step.StepNumber} 的 pageSize 必须在 1 到 20 之间。");
+            }
+        }
+
+        // 验证 GenerateContentRevision 动作参数：contentFromStep 和 originalContent 必须二选一，不能同时存在
+        private static void ValidateGenerateContentRevisionParameters(AgentPlanStep step, List<string> errors)
+        {
+            // 获取 contentFromStep（引用前面步骤的内容）和 originalContent（直接提供的文本）
+            var contentFromStep = GetIntParameter(step, "contentFromStep");
+            var originalContent = GetStringParameter(step, "originalContent");
+
+            // 两者都未提供 → 报错 
+            if (contentFromStep <= 0 && string.IsNullOrWhiteSpace(originalContent))
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 contentFromStep 或 originalContent 之一。");
+            }
+
+            // 两者都提供了 → 报错（只能二选一）
+            if (contentFromStep > 0 && !string.IsNullOrWhiteSpace(originalContent))
+            {
+                errors.Add($"Step {step.StepNumber} 的 contentFromStep 和 originalContent 只能二选一，不能同时提供。");
+            }
+
+            // instruction 为可选参数，此处不做强制校验，但可提示（实际校验逻辑未实现，仅注释说明）
+        }
+
+        // 验证 UpdateArticleContent 动作的参数：articleId 与 articleIdFromStep 二选一，newContent 与 newContentFromStep 二选一
+        private static void ValidateUpdateArticleContentParameters(AgentPlanStep step, List<string> errors)
+        {
+            // 获取 articleId 和 articleIdFromStep（两者都是可选的整型参数）
+            var articleId = GetIntParameter(step, "articleId");
+            var articleIdFromStep = GetIntParameter(step, "articleIdFromStep");
+
+            // 两者都未提供 → 报错
+            if (articleId <= 0 && articleIdFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 articleId 或 articleIdFromStep。");
+            }
+            // 两者都提供了 → 报错（只能二选一）
+            if (articleId > 0 && articleIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 articleId 和 articleIdFromStep 只能二选一。");
+            }
+
+            // 获取 newContent 和 newContentFromStep
+            var newContent = GetStringParameter(step, "newContent");
+            var newContentFromStep = GetIntParameter(step, "newContentFromStep");
+
+            // 两者都未提供 → 报错
+            if (string.IsNullOrWhiteSpace(newContent) && newContentFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 newContent 或 newContentFromStep。");
+            }
+            // 两者都提供了 → 报错（只能二选一）
+            if (!string.IsNullOrWhiteSpace(newContent) && newContentFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 newContent 和 newContentFromStep 只能二选一。");
+            }
+        }
+
+        // 验证 DeleteArticle 动作参数：articleId 和 articleIdFromStep 必须二选一，且至少提供一个
+        private static void ValidateDeleteArticleParameters(
+            AgentPlanStep step,
+            List<string> errors)
+        {
+            // 获取文章 ID 的直接值和引用值
+            var articleId = GetIntParameter(step, "articleId");
+            var articleIdFromStep = GetIntParameter(step, "articleIdFromStep");
+
+            // 两者都未提供 → 报错
+            if (articleId <= 0 && articleIdFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 articleId 或 articleIdFromStep 来指定要删除的文章。");
+            }
+
+            // 两者都提供了 → 报错（只能二选一）
+            if (articleId > 0 && articleIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 articleId 和 articleIdFromStep 只能二选一，不能同时提供。");
+            }
         }
 
         // 验证 GetArticleContentById 动作的参数，要求：必须提供 articleId 或 articleIdFromStep 中的一个有效值

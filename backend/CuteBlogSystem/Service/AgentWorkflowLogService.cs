@@ -50,15 +50,15 @@ namespace CuteBlogSystem.Service
 
             try
             {
-                bool success = await _agentWorkflowLogRepository.AddLogAsync(log);
+                var logId = await _agentWorkflowLogRepository.AddLogAsync(log);
 
-                if (success)
+                if (logId != null)
                 {
                     var apiResponse = new ApiResponse
                     (
                         true,
                         "日志保存成功",
-                        null,
+                        logId,
                         ResponseCode.Success
                     );
                     return apiResponse;
@@ -69,8 +69,7 @@ namespace CuteBlogSystem.Service
                     (
                         false,
                         "日志保存失败，数据库操作未成功",
-                        null,
-                        ResponseCode.InternalError
+                        code: ResponseCode.InternalError
                     );
                     return apiResponse;
                 }

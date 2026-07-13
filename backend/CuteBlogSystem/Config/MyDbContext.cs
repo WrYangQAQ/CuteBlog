@@ -21,6 +21,10 @@ namespace CuteBlogSystem.Config
         public DbSet<AgentConversation> AgentConversations { get; set; }
         public DbSet<AgentMessage> AgentMessages { get; set; }
         public DbSet<AgentPendingConfirmation> AgentPendingConfirmations { get; set; }
+        public DbSet<AgentTestCase> AgentTestCases { get; set; }
+        public DbSet<AgentEvaluationResult> AgentEvaluationResults { get; set; }
+        public DbSet<AgentEvaluationRun> AgentEvaluationRuns { get; set; }
+        public DbSet<AgentEvaluationReportSnapshot> AgentEvaluationReportSnapshots { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -217,6 +221,171 @@ namespace CuteBlogSystem.Config
                     .IsUnique();
 
                 entity.HasIndex(x => new { x.SessionId, x.Status });
+            });
+
+            // 配置 AgentTestCase 测试用例表
+            modelBuilder.Entity<AgentTestCase>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.CaseName)
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                entity.Property(x => x.UserMessage)
+                    .HasMaxLength(2000)
+                    .IsRequired();
+
+                entity.Property(x => x.SessionId)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.ExpectedActionsJson)
+                    .IsRequired();
+
+                entity.Property(x => x.ExpectedAnswerSummary)
+                    .HasMaxLength(4000);
+
+                entity.Property(x => x.Category)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.Remark)
+                    .HasMaxLength(1000);
+
+                entity.Property(x => x.IsDeleted)
+                    .IsRequired();
+
+                entity.Property(x => x.ExpectedAnswerContainsJson)
+                    .IsRequired();
+
+                entity.HasIndex(x => x.IsEnabled);
+
+                entity.HasIndex(x => x.Category);
+
+                entity.HasIndex(x => x.IsDeleted);
+            });
+
+            // 配置 AgentEvaluationRun 评估运行批次表
+            modelBuilder.Entity<AgentEvaluationRun>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.ModelUsed)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.Remark)
+                    .HasMaxLength(1000);
+
+                entity.HasIndex(x => x.StartedAt);
+
+                entity.Property(x => x.PlannerPromptVersion)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.ActionRegistryVersion)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.EvaluationVersion)
+                    .HasMaxLength(100);
+
+                entity.Property(x => x.FinalAnswerPromptVersion)
+                    .HasMaxLength(100);
+
+                entity.HasOne(x => x.SourceRun)
+                    .WithMany()
+                    .HasForeignKey(x => x.SourceId)
+                    .OnDelete(DeleteBehavior.Restrict); // 删除源批次时不删除当前批次
+
+                entity.HasIndex(x => x.SourceId);
+            });
+
+            // 配置 AgentEvaluationResult 单条评估结果表
+            modelBuilder.Entity<AgentEvaluationResult>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.CaseName)
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                entity.Property(x => x.ErrorsJson)
+                    .IsRequired();
+
+                entity.Property(x => x.Answer)
+                    .IsRequired();
+
+                entity.Property(x => x.ActualActionsJson)
+                    .IsRequired();
+
+                entity.Property(x => x.SemanticJudgeReason)
+                    .HasMaxLength(4000);
+
+                entity.Property(x => x.FailureType)
+                    .HasConversion<int>()
+                    .IsRequired();
+
+                entity.HasOne(x => x.Run)
+                    .WithMany()
+                    .HasForeignKey(x => x.RunId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(x => x.TestCase)
+                    .WithMany()
+                    .HasForeignKey(x => x.TestCaseId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(x => x.RunId);
+
+                entity.HasIndex(x => x.TestCaseId);
+
+                entity.HasIndex(x => x.CreatedAt);
+
+                entity.HasIndex(x => x.Passed);
+
+                entity.HasIndex(x => x.FailureType);
+
+                entity.HasIndex(x => x.WorkflowLogId);
+
+                entity.Property(x => x.TestCaseSnapshotJson)
+                    .HasColumnType("nvarchar(max)")
+                    .HasDefaultValue("{}")
+                    .IsRequired();
+            });
+
+            // 配置 AgentEvaluationReportSnapshot 评估报告快照表
+            modelBuilder.Entity<AgentEvaluationReportSnapshot>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.Property(x => x.FileName)
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                entity.Property(x => x.MarkdownContent)
+                    .IsRequired();
+
+                entity.Property(x => x.PlannerPromptVersion)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.ActionRegistryVersion)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.EvaluationVersion)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(x => x.FinalAnswerPromptVersion)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.HasOne(x => x.Run)
+                    .WithMany()
+                    .HasForeignKey(x => x.RunId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(x => x.RunId).IsUnique();
+                entity.HasIndex(x => x.CreatedAt);
+                entity.HasIndex(x => x.IsDeleted);
             });
 
             base.OnModelCreating(modelBuilder);

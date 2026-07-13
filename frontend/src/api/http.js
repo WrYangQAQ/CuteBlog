@@ -63,7 +63,7 @@ function getErrorMessage(error) {
 
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "",
-  timeout: 15000
+  timeout: 35000
 });
 
 http.interceptors.request.use((config) => {
@@ -76,6 +76,10 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => {
+    if (response.config?.responseType === "blob") {
+      return response;
+    }
+
     const normalized = normalizeApiBody(response.data);
 
     if (normalized) {
@@ -113,3 +117,4 @@ http.interceptors.response.use(
 );
 
 export default http;
+

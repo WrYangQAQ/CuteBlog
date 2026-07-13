@@ -13,6 +13,9 @@ namespace CuteBlogSystem.DTO.Agent
         // 对执行结果的简短描述消息，如“执行成功”或“已生成补救建议”
         public string Message { get; set; } = string.Empty;
 
+        // 该条执行可能存在的工作流 Id（为方便进行日志追踪）
+        public int? WorkflowLogId { get; set; }
+
         // 最终返回给用户的答案文本（来自原始计划或补救计划的 FinalAnswer）
         public string Answer { get; set; } = string.Empty;
 

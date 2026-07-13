@@ -1,0 +1,146 @@
+﻿import http from "./http";
+
+export function askAgentApi({ content, sessionId, userId, debug = false }) {
+  return http.post(`/api/AiAgent/planner-ask?debug=${debug}`, {
+    sessionId,
+    userId,
+    content,
+    role: 2
+  }, {
+    allowBusinessFailure: true
+  });
+}
+
+export function getAgentConversationsApi() {
+  return http.get("/api/AiAgent/conversations");
+}
+
+export function getArchivedAgentConversationsApi() {
+  return http.get("/api/AiAgent/conversations/archived");
+}
+
+export function getAgentMessagesApi(sessionId) {
+  return http.get(`/api/AiAgent/conversations/${encodeURIComponent(sessionId)}/messages`);
+}
+
+export function archiveAgentConversationApi(sessionId) {
+  return http.patch(`/api/AiAgent/conversations/${encodeURIComponent(sessionId)}/archive`);
+}
+
+export function restoreAgentConversationApi(sessionId) {
+  return http.patch(`/api/AiAgent/conversations/${encodeURIComponent(sessionId)}/restore`);
+}
+
+export function deleteAgentConversationApi(sessionId) {
+  return http.delete(`/api/AiAgent/conversations/${encodeURIComponent(sessionId)}`);
+}
+
+export function confirmAgentPlanApi({ sessionId, confirmationId, debug = false }) {
+  return http.post(`/api/AiAgent/confirm?debug=${debug}`, {
+    sessionId,
+    confirmationId
+  }, {
+    allowBusinessFailure: true
+  });
+}
+
+export function cancelAgentConfirmationApi({ sessionId, confirmationId }) {
+  return http.post("/api/AiAgent/cancel-confirmation", {
+    sessionId,
+    confirmationId
+  }, {
+    allowBusinessFailure: true
+  });
+}
+
+export function getRecentAgentWorkflowLogsApi(count = 20) {
+  return http.get("/api/AiAgent/workflow-logs/recent", {
+    params: { count }
+  });
+}
+
+export function getAgentWorkflowLogDetailApi(id) {
+  return http.get(`/api/AiAgent/logs/${encodeURIComponent(id)}`);
+}
+
+export function runAgentEvaluationApi(caseIds = []) {
+  return http.post("/api/AiAgent/evaluation/run", caseIds, {
+    timeout: 90000
+  });
+}
+
+export function rerunAgentEvaluationRunApi(runId) {
+  return http.post(`/api/AiAgent/evaluation/runs/${encodeURIComponent(runId)}/rerun`, null, {
+    timeout: 90000
+  });
+}
+
+export function getRecentAgentEvaluationRunsApi(recentCount = 10) {
+  return http.get("/api/AiAgent/evaluation/runs/recent", {
+    params: { recentCount }
+  });
+}
+
+export function getAgentEvaluationRunResultsApi(runId) {
+  return http.get(`/api/AiAgent/evaluation/runs/${encodeURIComponent(runId)}/results`);
+}
+
+export function getAgentEvaluationReportApi(runId) {
+  return http.get(`/api/AiAgent/evaluation/runs/${encodeURIComponent(runId)}/report`);
+}
+
+export function downloadAgentEvaluationReportApi(runId) {
+  return http.get(`/api/AiAgent/evaluation/runs/${encodeURIComponent(runId)}/report`, {
+    params: { download: true },
+    responseType: "blob",
+    timeout: 90000
+  });
+}
+
+export function compareAgentEvaluationRunsApi(baseRunId, targetRunId) {
+  return http.get("/api/AiAgent/evaluation/runs/compare", {
+    params: { baseRunId, targetRunId }
+  });
+}
+export function getAgentEvaluationRegressionSummaryApi(baseRunId, targetRunId) {
+  return http.get("/api/AiAgent/evaluation/runs/regression-summary", {
+    params: { baseRunId, targetRunId }
+  });
+}
+
+export function getAgentEvaluationWorkflowLogApi(runId, caseId) {
+  return http.get(`/api/AiAgent/evaluation/runs/${encodeURIComponent(runId)}/test-cases/${encodeURIComponent(caseId)}/workflow-log`);
+}
+
+export function getAgentEvaluationTestCasesApi(status = 1) {
+  return http.get("/api/AiAgent/evaluation/test-cases", {
+    params: { status }
+  });
+}
+
+export function createAgentEvaluationTestCaseApi(payload) {
+  return http.post("/api/AiAgent/evaluation/test-cases", payload);
+}
+
+export function updateAgentEvaluationTestCaseApi(payload) {
+  return http.put("/api/AiAgent/evaluation/test-cases", payload);
+}
+
+export function deleteAgentEvaluationTestCaseApi(caseId) {
+  return http.delete("/api/AiAgent/evaluation/test-cases", {
+    params: { caseId }
+  });
+}
+
+export function toggleAgentEvaluationTestCaseStatusApi(caseId) {
+  return http.patch("/api/AiAgent/evaluation/test-cases", null, {
+    params: { caseId }
+  });
+}
+
+
+
+
+
+
+

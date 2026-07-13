@@ -1,4 +1,5 @@
 ﻿using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using Microsoft.EntityFrameworkCore;
@@ -65,17 +66,33 @@ namespace CuteBlogSystem.Repository
         }
 
         // 根据会话 ID 异步删除对话记录（逻辑删除：将状态改为 Deleted），返回是否成功
-        public async Task<bool> DeleteBySessionIdAsync(string sessionId)
+        public async Task<ApiResponse> DeleteBySessionIdAsync(string sessionId)
         {
             var conversation = await GetBySessionIdAsync(sessionId);
             if (conversation == null)
             {
-                return false;   // 未找到记录，删除失败
+                return new ApiResponse(
+                    false, "未找到该条记录！删除失败！", code:ResponseCode.NotFound);   // 未找到记录，删除失败
+            }
+            if (conversation.Status == AgentConversationStatus.Evaluation)
+            {
+                return new ApiResponse(
+                    false, "该条记录为Agent评估会话！无法删除！", code: ResponseCode.BadRequest);   // 该记录为评估记录，不能删除
             }
             conversation.Status = AgentConversationStatus.Deleted;   // 逻辑删除
             _dbContext.AgentConversations.Update(conversation);
             var affectedRows = await _dbContext.SaveChangesAsync();
-            return affectedRows > 0;
+            if (affectedRows > 0)
+            {
+                return new ApiResponse(
+                    true, "删除成功", code: ResponseCode.Success); 
+            }
+            else
+            {
+                return new ApiResponse(
+                    false, "未知错误！删除失败！", code: ResponseCode.InternalError);
+            }
+            
         }
 
         // 根据会话 ID 对会话状态进行处理
@@ -83,17 +100,17 @@ namespace CuteBlogSystem.Repository
             string sessionId,
             AgentConversationStatus status)
         {
-            var session = await GetBySessionIdAsync(sessionId);
+            var conversation = await GetBySessionIdAsync(sessionId);
 
-            if (session == null)
+            if (conversation == null)
             {
                 return false;
             }
 
-            session.Status = status;
-            session.UpdatedAt = DateTime.UtcNow;
+            conversation.Status = status;
+            conversation.UpdatedAt = DateTime.UtcNow;
 
-            return await UpdateAsync(session);
+            return await UpdateAsync(conversation);
         }
 
         // 查询已经归档的会话，返回会话列表
@@ -105,6 +122,15 @@ namespace CuteBlogSystem.Repository
                     && conversation.Status == AgentConversationStatus.Archived)
                 .OrderByDescending(conversation => conversation.UpdatedAt)
                 .ToListAsync();
+        }
+
+        // 查询评估测试使用状态的会话，返回会话数量
+        public int GetEvaluationConversationsCount()
+        {
+            return _dbContext.AgentConversations
+                .Where(conversation =>
+                    conversation.Status == AgentConversationStatus.Evaluation)
+                .Count();
         }
     }
 }

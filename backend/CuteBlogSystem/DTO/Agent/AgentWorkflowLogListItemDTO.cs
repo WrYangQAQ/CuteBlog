@@ -86,6 +86,7 @@ namespace CuteBlogSystem.DTO.Agent
             ExecutionResultJson = log.ExecutionResultJson;
             FailureAnalysis = log.FailureAnalysis;
             RecoveryPlanJson = log.RecoveryPlanJson;
+            RecoveryExecutionResultJson = log.RecoveryExecutionResultJson;
         }
     }
 }

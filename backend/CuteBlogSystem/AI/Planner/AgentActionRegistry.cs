@@ -17,6 +17,21 @@ namespace CuteBlogSystem.AI.Planner
         // 对比两篇文章
         public const string CompareContents = nameof(CompareContents);
 
+        // 获取自己名下的所有文章
+        public const string GetMyArticles = nameof(GetMyArticles);
+
+        // 给自己名下的文章做标题修改
+        public const string UpdateArticleTitle = nameof(UpdateArticleTitle);
+
+        // 根据文章正文提出修改建议
+        public const string GenerateContentRevision = nameof(GenerateContentRevision);
+
+        // 对文章正文进行修改
+        public const string UpdateArticleContent = nameof(UpdateArticleContent);
+
+        // 删除自己名下的文章（管理员能删除所有文章）
+        public const string DeleteArticle = nameof(DeleteArticle);
+
         // 获取所有分类（用于补救计划）
         public const string GetAllCategories = nameof(GetAllCategories);
 
@@ -35,7 +50,12 @@ namespace CuteBlogSystem.AI.Planner
             CompareContents,
             GetAllCategories,
             ExplainFailureWithSuggestions,
-            AnswerQuestionFromContent
+            AnswerQuestionFromContent,
+            GetMyArticles,
+            UpdateArticleTitle,
+            GenerateContentRevision,
+            UpdateArticleContent,
+            DeleteArticle
         };
 
         // 仅补救计划允许执行的动作集合
@@ -63,6 +83,16 @@ namespace CuteBlogSystem.AI.Planner
             [SummarizeContent] = AgentActionRiskLevel.ReadOnly,
 
             [AnswerQuestionFromContent] = AgentActionRiskLevel.ReadOnly,
+
+            [GetMyArticles] = AgentActionRiskLevel.ReadOnly,
+
+            [UpdateArticleTitle] = AgentActionRiskLevel.RequireConfirmation,
+
+            [GenerateContentRevision] = AgentActionRiskLevel.ReadOnly,
+
+            [UpdateArticleContent] = AgentActionRiskLevel.RequireConfirmation,
+
+            [DeleteArticle] = AgentActionRiskLevel.Forbidden,
 
             [CompareContents] = AgentActionRiskLevel.ReadOnly,
 

@@ -9,6 +9,18 @@ namespace CuteBlogSystem.Service
 {
     public class AgentIntentRouterService
     {
+        private static readonly List<string> unsupportedSensitiveKeywords = new()
+        {
+            "敏感", "拦截", "UnSafe", "UnAuthorized", "越权", "提权", "安全", "危险",
+            "攻击", "密码", "注入", "违反", "违规"
+        };
+
+        private static readonly List<string> noAbilityKeywords = new()
+        {
+            "能力不足", "NoAbility", "无法识别", "识别失败", "超出能力", "不支持", "未定义",
+            "不明确", "无法处理"
+        };
+
         private readonly IChatClient _chatClient;
         private readonly ILogger<AgentIntentRouterService> _logger;
 
@@ -107,21 +119,71 @@ namespace CuteBlogSystem.Service
         // 在路由type为Unsupported的时候，给出固定无法回答回复
         public AgentAskResponse GenerateUnsupportedResponse(AgentIntentResult intentResult)
         {
+            string reason = intentResult.Reason ?? string.Empty;
+
+            // 1. 安全拦截类（匹配敏感词列表）
+            if (unsupportedSensitiveKeywords.Any(keyword => reason.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new AgentAskResponse
+                {
+                    Success = false,
+                    Recovered = false,
+                    Message = $"请求被安全策略拦截：{reason}",
+                    Answer =
+                    """
+                    根据系统安全策略，我无法响应包含违规指令或试图越权操作的请求。
+
+                    如果您想使用博客系统功能，请确保您的问题是关于：
+                    - 查询、获取或总结博客文章
+                    - 对比不同文章内容
+                    - 管理当前会话的上下文
+
+                    如有其他合规问题，请尝试重新描述您的需求。
+                    """
+                };
+            }
+
+            // 2. 能力不足类（匹配能力不足列表）
+            if (noAbilityKeywords.Any(keyword => reason.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new AgentAskResponse
+                {
+                    Success = false,
+                    Recovered = false,
+                    Message = $"请求超出了我的处理能力：{reason}",
+                    Answer =
+                    """
+                    这个问题超出了我当前配置的智能范围。
+
+                    我目前专精于「博客平台」的日常运营辅助，暂时无法处理您提到的这类请求。
+                    如果您需要执行具体操作，建议您将需求细化为：
+                    - 按分类、点赞数检索某篇具体文章
+                    - 获取并总结某篇文章的具体内容
+                    - 针对文章细节进行深度问答
+
+                    您可以换一种更具体的描述再试一次，我会尽力帮您解答。
+                    """
+                };
+            }
+
+            // 3. 其他默认不支持（兜底）
             return new AgentAskResponse
             {
                 Success = false,
                 Recovered = false,
-                Message = $"请求不受支持：{intentResult.Reason}",
+                Message = $"请求不受支持：{reason}",
                 Answer =
                 """
-                抱歉，我目前无法执行这项操作。
+                抱歉，我暂时无法执行您提到的这项操作。
 
-                我现在可以帮助你：
-                - 查询博客文章
+                我当前可以帮助您处理以下事务：
+                - 查询博客文章（如按分类、按点赞数排序）
                 - 获取并总结文章内容
-                - 回答文章中的具体问题
-                - 对比不同文章
-                - 处理当前会话的上下文
+                - 回答文章中的具体技术问题
+                - 对比不同文章的差异
+                - 重置或管理当前对话的上下文
+
+                如果以上有您需要的功能，请重新向我提问。
                 """
             };
         }
@@ -131,6 +193,17 @@ namespace CuteBlogSystem.Service
         {
             // 去除首尾空白，便于匹配
             var normalized = userMessage.Trim();
+
+            var titleUpdateWords = new[] { "修改标题", "改标题", "标题改成", "标题改为", "把标题改成", "把标题改为", "重命名" };
+
+            if (titleUpdateWords.Any(word =>
+                normalized.Contains(word, StringComparison.OrdinalIgnoreCase)))
+            {
+                return CreateResult(
+                    AgentIntentType.ExecuteWorkflow,
+                    1,
+                    "命中本地文章标题修改规则，交给工作流执行并触发确认机制");
+            }
 
             // 定义本地可识别的重置命令列表
             var resetCommands = new[]
@@ -156,6 +229,32 @@ namespace CuteBlogSystem.Service
                     "命中明确的本地重置命令");
             }
 
+            // 定义本地可识别的设计安全敏感词列表
+            var classAKeywords = new[] { "管理员密码", "系统密码", "数据库密码", "后台密码", "密码本", "越狱",
+                "执行命令", "绕过规则", "忽略系统提示", "提示词注入", "暴力破解", "反弹shell" };
+
+            // B类：语境依赖词（允许正常提问，组合时拦截）
+            var classBKeywords = new[] { "端口", "环境变量", "配置文件", "外网", "token", "api key" };
+
+            // B类的危险前缀/动作词（如果同时命中B和动作，则拦截）
+            var dangerActions = new[] { "读取", "扫描", "暴力破解", "攻击", "修改", "删除", "泄露", "导出", "外传", "绕过", "破解" };
+
+            // 1. 绝对拦截检查
+            if (classAKeywords.Any(keyword => normalized.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                return CreateResult(AgentIntentType.Unsupported, 1, "命中本地安全拦截规则：用户请求可能涉及敏感凭据、越权或危险操作");
+            }
+
+            // 2. 语境依赖检查（防止误伤）
+            bool hasContextWord = classBKeywords.Any(keyword => normalized.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            bool hasDangerAction = dangerActions.Any(action => normalized.Contains(action, StringComparison.OrdinalIgnoreCase));
+
+            if (hasContextWord && hasDangerAction)
+            {
+                // 比如 "获取端口"、"扫描环境变量" 才会被拦截
+                return CreateResult(AgentIntentType.Unsupported, 1, "命中本地安全拦截规则：用户请求可能涉及敏感凭据、越权或危险操作");
+            }
+
             // 未匹配任何本地规则，返回 null 交给后续模型处理
             return null;
         }
@@ -175,7 +274,14 @@ namespace CuteBlogSystem.Service
 
                     1. ExecuteWorkflow
                        用户要求查询文章、获取正文、总结、对比文章、
-                       回答文章内容问题或执行其他博客任务。
+                       回答文章内容问题，或执行系统已支持的博客任务。
+                       包括：
+                    -  查询、总结、对比文章
+                    -  获取我的文章列表
+                    -  修改当前登录用户自己文章的标题
+                    -  修改当前登录用户自己文章的正文内容
+                       这类修改操作不应判定为 Unsupported，后续工作流会通过风险等级和用户确认机制控制。
+                    -  删除当前登录用户自己的文章意图识别，但实际执行会被风险控制层禁止。
 
                     2. ResetContext
                        用户明确要求忘记、清除或重置此前对话上下文。
@@ -184,13 +290,17 @@ namespace CuteBlogSystem.Service
                        用户只是打招呼、感谢、告别或进行不需要工具的简单交流。
 
                     4. Unsupported
-                       用户要求执行系统不支持或不应执行的操作，
-                       例如删除文章、修改权限、操作其他用户数据。
+                       用户要求执行系统不支持、不应执行或威胁系统安全性和隐私信息的操作，
+                       例如修改权限、操作其他用户数据或是询问敏感信息，如管理员账号密码，服务器URL等信息。
                                         
-                    - 用户询问“如何删除文章”“如何修改权限”等操作方法，
-                      不代表要求 Agent 直接执行，不应识别为 Unsupported。
-                    - 用户明确要求 Agent 删除文章、修改权限、操作其他用户数据，
-                      才识别为 Unsupported。
+                    -  用户询问“如何删除文章”“如何修改权限”等操作方法，
+                       不代表要求 Agent 直接执行，不应识别为 Unsupported。
+                    -  用户要求删除当前登录用户自己的文章，不要识别为 Unsupported，应识别为 ExecuteWorkflow。
+                       后续工作流会生成 DeleteArticle，并由风险控制层以 Forbidden 拦截。
+                    注意：
+                    -  用户要求修改自己文章的标题或正文，不属于 Unsupported，应识别为 ExecuteWorkflow。
+                    -  用户要求删除当前登录用户自己的文章，不属于 Unsupported，应识别为 ExecuteWorkflow。
+                    -  用户要求修改权限、操作其他用户数据、获取敏感信息，才属于 Unsupported。
 
                     只输出 JSON，不要输出 Markdown 或解释文字：
 
@@ -244,6 +354,11 @@ namespace CuteBlogSystem.Service
             }
 
             var confidence = Math.Clamp(modelResult.Confidence, 0, 1);
+
+            if (intent == AgentIntentType.Unsupported)
+            {
+                return CreateResult(intent, confidence, modelResult.Reason);
+            }
 
             // 对低置信度不执行特殊分支，防止误清除
             if (confidence < 0.7)

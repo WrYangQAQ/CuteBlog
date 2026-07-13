@@ -2,6 +2,7 @@
 using SharpToken;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 
 namespace CuteBlogSystem.Util
 {
@@ -62,5 +63,88 @@ namespace CuteBlogSystem.Util
             var tokens = encoding.Encode(input);
             return tokens.Count;
         }
+
+        // 从参数字典中安全获取字符串值，支持 JsonElement 类型，不存在或解析失败时返回默认值
+        public static string GetString(
+            Dictionary<string, object>? parameters,
+            string key,
+            string defaultValue = "")
+        {
+            if (parameters == null ||
+                !parameters.TryGetValue(key, out var value) ||
+                value == null)
+            {
+                return defaultValue;
+            }
+
+            if (value is JsonElement jsonElement)
+            {
+                return jsonElement.ValueKind == JsonValueKind.String
+                    ? jsonElement.GetString() ?? defaultValue
+                    : jsonElement.ToString();
+            }
+
+            return value.ToString() ?? defaultValue;
+        }
+
+        // 从参数字典中安全获取整数值，支持 JsonElement（数字或数字字符串），不存在或解析失败时返回默认值
+        public static int GetInt(
+            Dictionary<string, object>? parameters,
+            string key,
+            int defaultValue = 0)
+        {
+            if (parameters == null ||
+                !parameters.TryGetValue(key, out var value) ||
+                value == null)
+            {
+                return defaultValue;
+            }
+
+            if (value is JsonElement jsonElement)
+            {
+                if (jsonElement.ValueKind == JsonValueKind.Number &&
+                    jsonElement.TryGetInt32(out var number))
+                {
+                    return number;
+                }
+
+                if (jsonElement.ValueKind == JsonValueKind.String &&
+                    int.TryParse(jsonElement.GetString(), out var stringNumber))
+                {
+                    return stringNumber;
+                }
+
+                return defaultValue;
+            }
+
+            return int.TryParse(value.ToString(), out var result)
+                ? result
+                : defaultValue;
+        }
+
+        // 检查参数字典中是否存在指定键
+        public static bool HasKey(
+            Dictionary<string, object>? parameters,
+            string key)
+        {
+            return parameters?.ContainsKey(key) == true;
+        }
+    }
+
+    public static class AgentVersionConstants
+    {
+        // 以下是一些示例常量，表示不同版本的 Agent 相关功能或配置：
+
+        // 计划器提示版本
+        public const string PlannerPromptVersion = "planner-prompt-v1";
+
+        // 任务提示版本
+        public const string ActionRegistryVersion = "action-registry-v1";
+
+        // 评估版本
+        public const string EvaluationVersion = "evaluation-v1";
+
+        // 最终答案提示版本
+        public const string FinalAnswerPromptVersion = "final-answer-v1";
     }
 }

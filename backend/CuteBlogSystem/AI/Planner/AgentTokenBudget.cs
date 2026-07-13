@@ -54,6 +54,9 @@
         // 直接聊天路由下回复最大输出 Token
         public const int DirectChatMaxOutputToken = 150;
 
+        // 文章润色最大输出 Token
+        public const int ContentPolishMaxOutputTokens = 2048;
+
         // 检查用户消息是否超过最大允许长度
         public static bool IsUserMessageTooLong(string userMessage)
         {
