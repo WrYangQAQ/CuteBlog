@@ -383,6 +383,7 @@ namespace CuteBlogSystem.Service
                         debug);
                 }
 
+                // 检测生成计划与用户的权限关系
                 var permissionResult = await _paramPermissionService.ValidateAsync(confirmedPlan.Plan, userId);
 
                 if (!permissionResult.IsValid)
@@ -411,7 +412,15 @@ namespace CuteBlogSystem.Service
                         debug);
                 }
 
+                // 检测生成计划参数的风险
                 var riskParamResult = _paramRiskService.Validate(confirmedPlan.Plan);
+
+                _logger.LogInformation
+                (
+                    "计划参数风险校验结果：IsSafe={IsSafe}, Errors={Errors}",
+                    riskParamResult.IsSafe,
+                    string.Join("；", riskParamResult.Errors)
+                );
 
                 if (!riskParamResult.IsSafe)
                 {
@@ -572,6 +581,13 @@ namespace CuteBlogSystem.Service
 
                 var riskParamResult = _paramRiskService.Validate(plan);
 
+                _logger.LogInformation
+                (
+                    "计划参数风险校验结果：IsSafe={IsSafe}, Errors={Errors}",
+                    riskParamResult.IsSafe,
+                    string.Join("；", riskParamResult.Errors)
+                );
+
                 if (!riskParamResult.IsSafe)
                 {
                     return new AgentAskResponse
@@ -588,6 +604,7 @@ namespace CuteBlogSystem.Service
                     };
                 }
 
+                
                 if (riskLevel == AgentActionRiskLevel.RequireConfirmation)
                 {
                     var confirmationId = await _pendingConfirmationService.CreateAsync(
@@ -800,6 +817,27 @@ namespace CuteBlogSystem.Service
                 };
             }
 
+            if (IsNonRecoverableExecutionFailure(executionResult))
+            {
+                var failedMessage = executionResult.StepResults
+                    .Where(r => !r.Success)
+                    .Select(r => r.Message)
+                    .FirstOrDefault() ?? "任务执行失败。";
+                
+                return new AgentAskResponse
+                {
+                    Success = false,
+                    Recovered = false,
+                    Message = "Agent 执行被安全策略拦截",
+                    Answer = failedMessage,
+                    Debug = new AgentDebugInfo
+                    {
+                        Plan = plan,
+                        ExecutionResult = executionResult
+                    }
+                };
+            }
+
             // 如果有失败步骤，进行分析，恢复，验证，做二次执行，如果依旧无法执行，给出建议
             var failureAnalysis = await _failureAnalyzer.AnalyzeFailureAsync(plan, executionResult); // 获取对失败步骤的分析结果
 
@@ -830,7 +868,7 @@ namespace CuteBlogSystem.Service
             }
 
             // 如果恢复后的计划通过验证，则继续执行恢复后的计划，并获取执行结果
-            var recoveryExecutionResult = await _agentPlanExecutor.ExecuteRecoveryAsync(recoveryPlan, executionResult);
+            var recoveryExecutionResult = await _agentPlanExecutor.ExecuteRecoveryAsync(recoveryPlan, executionResult, userId);
             var recoverySucceeded = recoveryExecutionResult.StepResults.All(s => s.Success);
 
             // 根据恢复计划执行结果返回不同响应
@@ -1005,6 +1043,31 @@ namespace CuteBlogSystem.Service
             }
 
             return response;
+        }
+
+        // 判断执行结果是否为不可恢复的失败（即无法通过重试或补救计划恢复的严重错误）
+        private static bool IsNonRecoverableExecutionFailure(AgentPlanExecutionResult executionResult)
+        {
+            // 从所有失败的步骤中取第一条错误消息
+            var failedMessage = executionResult.StepResults
+                .Where(r => !r.Success)
+                .Select(r => r.Message)
+                .FirstOrDefault() ?? string.Empty;
+
+            // 定义不可恢复失败的错误关键词列表（安全拦截、权限拒绝、非法操作等）
+            var nonRecoverableKeywords = new[]
+            {
+                "未通过安全检查",
+                "参数存在较高风险",
+                "无权访问",
+                "无权修改",
+                "AIShield 工具调用检测拦截",
+                "当前 Agent 不允许执行"
+            };
+
+            // 如果错误消息包含任一不可恢复关键词，返回 true
+            return nonRecoverableKeywords.Any(keyword =>
+                failedMessage.Contains(keyword, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

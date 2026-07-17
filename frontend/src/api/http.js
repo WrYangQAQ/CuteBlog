@@ -63,7 +63,7 @@ function getErrorMessage(error) {
 
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "",
-  timeout: 35000
+  timeout: 60000
 });
 
 http.interceptors.request.use((config) => {

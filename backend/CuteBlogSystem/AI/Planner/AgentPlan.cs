@@ -3,7 +3,7 @@
     public class AgentPlan
     {
         // 计划要实现的最终目标描述，例如“撰写一篇关于AI的博客文章”
-        public string Goal { get; set; }
+        public string Goal { get; set; } = string.Empty;
 
         // 构成该计划的所有步骤列表，按顺序执行以达成目标
         public List<AgentPlanStep> Steps { get; set; } = new();

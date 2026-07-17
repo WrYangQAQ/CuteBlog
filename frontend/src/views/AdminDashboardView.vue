@@ -35,15 +35,52 @@ const summaryCards = computed(() => {
   ];
 });
 
-const trendItems = computed(() => {
+const trendChart = computed(() => {
   const values = stats.value?.articlesLast7Days || [];
   const max = Math.max(...values, 1);
+  const width = 700;
+  const height = 240;
+  const padding = { top: 28, right: 28, bottom: 44, left: 42 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const today = new Date();
 
-  return values.map((count, index) => ({
-    label: `D${index + 1}`,
-    count,
-    height: `${Math.max(12, Math.round((count / max) * 120))}px`,
-  }));
+  const points = values.map((count, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (values.length - 1 - index));
+
+    const x = padding.left + (values.length === 1 ? plotWidth / 2 : (plotWidth / (values.length - 1)) * index);
+    const y = padding.top + (1 - count / max) * plotHeight;
+    const label = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+    return {
+      x,
+      y,
+      count,
+      label,
+    };
+  });
+
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const areaPath = points.length
+    ? `${linePath} L ${points[points.length - 1].x} ${height - padding.bottom} L ${points[0].x} ${height - padding.bottom} Z`
+    : "";
+  const gridLines = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const y = padding.top + plotHeight * ratio;
+    const value = Math.round(max * (1 - ratio));
+
+    return { y, value };
+  });
+
+  return {
+    width,
+    height,
+    points,
+    linePath,
+    areaPath,
+    gridLines,
+  };
 });
 
 async function loadStats() {
@@ -94,12 +131,24 @@ onMounted(loadStats);
           <span>按天统计新增文章</span>
         </div>
 
-        <div v-if="trendItems.length" class="trend-chart">
-          <div v-for="item in trendItems" :key="item.label" class="trend-item">
-            <span>{{ item.count }}</span>
-            <i :style="{ height: item.height }"></i>
-            <small>{{ item.label }}</small>
-          </div>
+        <div v-if="trendChart.points.length" class="line-chart">
+          <svg :viewBox="`0 0 ${trendChart.width} ${trendChart.height}`" role="img" aria-label="近 7 天发文趋势折线图">
+            <g class="line-chart__grid">
+              <g v-for="line in trendChart.gridLines" :key="`grid-${line.y}`">
+                <line x1="42" x2="672" :y1="line.y" :y2="line.y" />
+                <text x="18" :y="line.y + 4">{{ line.value }}</text>
+              </g>
+            </g>
+
+            <path class="line-chart__area" :d="trendChart.areaPath" />
+            <path class="line-chart__line" :d="trendChart.linePath" />
+
+            <g v-for="point in trendChart.points" :key="point.label" class="line-chart__point">
+              <circle :cx="point.x" :cy="point.y" r="5" />
+              <text class="line-chart__value" :x="point.x" :y="point.y - 12">{{ point.count }}</text>
+              <text class="line-chart__date" :x="point.x" y="224">{{ point.label }}</text>
+            </g>
+          </svg>
         </div>
         <p v-else class="hint">暂无趋势数据</p>
       </article>
@@ -229,38 +278,64 @@ onMounted(loadStats);
   font-weight: 700;
 }
 
-.trend-chart {
-  min-height: 210px;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  align-items: end;
-  gap: 14px;
-  padding: 14px 4px 0;
+.line-chart {
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid #d6e6fb;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fbfdff, #f4f9ff);
+  padding: 10px 12px;
 }
 
-.trend-item {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-}
-
-.trend-item span {
-  color: var(--ink);
-  font-weight: 800;
-}
-
-.trend-item i {
+.line-chart svg {
+  display: block;
   width: 100%;
-  max-width: 42px;
-  min-height: 12px;
-  border-radius: 12px 12px 5px 5px;
-  background: linear-gradient(180deg, #6ea8ff, #2f77dc);
-  box-shadow: 0 8px 18px rgba(47, 119, 220, 0.22);
+  height: 260px;
 }
 
-.trend-item small {
-  color: var(--muted);
+.line-chart__grid line {
+  stroke: #dce9fb;
+  stroke-dasharray: 5 7;
+}
+
+.line-chart__grid text {
+  fill: #7890b5;
+  font-size: 12px;
   font-weight: 700;
+  text-anchor: middle;
+}
+
+.line-chart__area {
+  fill: rgba(67, 128, 213, 0.12);
+}
+
+.line-chart__line {
+  fill: none;
+  stroke: #2f77dc;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+  filter: drop-shadow(0 8px 12px rgba(47, 119, 220, 0.2));
+}
+
+.line-chart__point circle {
+  fill: #fff;
+  stroke: #2f77dc;
+  stroke-width: 4;
+}
+
+.line-chart__value {
+  fill: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+
+.line-chart__date {
+  fill: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  text-anchor: middle;
 }
 
 .top-list {

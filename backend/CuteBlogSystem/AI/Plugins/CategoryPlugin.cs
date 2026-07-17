@@ -1,6 +1,7 @@
 ﻿using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using CuteBlogSystem.Service;
+using CuteBlogSystem.DTO.Blog;
 
 namespace CuteBlogSystem.AI.Plugins
 {
@@ -29,7 +30,7 @@ namespace CuteBlogSystem.AI.Plugins
             }
             else
             {
-                List<string>? categories = (result.Data as List<DTO.GetCategoryDTO>)?.Select(c => c.Name).ToList();
+                List<string>? categories = (result.Data as List<GetCategoryDTO>)?.Select(c => c.Name).ToList();
 
                 if (categories == null || categories.Count == 0)
                 {

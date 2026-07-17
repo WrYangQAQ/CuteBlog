@@ -16,6 +16,22 @@ namespace CuteBlogSystem.Service
         private const int RiskLargePageSize = 100;               // 超过此数量视为批量拉取风险
         private const int RiskLargeTopCount = 50;                // 查询前N条超过此值视为风险
 
+        // 危险内容修订指令列表
+        private static readonly string[] DangerousContentRevisionInstructions =
+        {
+            "清空",
+            "改成空",
+            "改为空",
+            "变为空",
+            "空字符串",
+            "删除全文",
+            "删除所有内容",
+            "删掉全部",
+            "覆盖为空",
+            "置空",
+            "null"
+        };
+
         // 主验证入口
         public AgentParameterRiskResult Validate(AgentPlan plan)
         {
@@ -54,10 +70,49 @@ namespace CuteBlogSystem.Service
                         DetectDeleteRisks(step, errors);
                         break;
 
+                    case AgentActionRegistry.GenerateContentRevision:
+                        DetectGenerateContentRevisionRisks(step, errors);
+                        break;
+
                     default:
                         // 其他Action不进行风险检测
                         break;
                 }
+            }
+
+            return errors.Count == 0
+                ? AgentParameterRiskResult.Safe()
+                : AgentParameterRiskResult.Unsafe(errors);
+        }
+
+
+        // ==================== 执行时内容检测器 ====================
+
+        // 验证更新内容是否具有风险性
+        public AgentParameterRiskResult ValidateResolvedArticleContent(string? newContent, int stepNumber)
+        {
+            var errors = new List<string>();
+
+            DetectArticleContentTextRisks(newContent, stepNumber, errors);
+
+            return errors.Count == 0
+                ? AgentParameterRiskResult.Safe()
+                : AgentParameterRiskResult.Unsafe(errors);
+        }
+
+        // 验证执行时修改建议是否具有风险性内容
+        public AgentParameterRiskResult ValidateContentRevisionInstruction(string? instruction, int stepNumber)
+        {
+            var errors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(instruction))
+            {
+                return AgentParameterRiskResult.Safe();
+            }
+
+            if (ContainsDangerousContentRevisionInstruction(instruction))
+            {
+                errors.Add($"Step {stepNumber} 的内容修订指令包含清空/删除正文风险：{instruction}");
             }
 
             return errors.Count == 0
@@ -127,42 +182,15 @@ namespace CuteBlogSystem.Service
                 // 如果参数里既没有 newContent 也没有 newContentFromStep，或者内容为空字符串
                 if (!step.Parameters.ContainsKey("newContentFromStep"))
                 {
-                    errors.Add($"Step {step.StepNumber} 新正文为空，存在直接清空文章的风险。");
+                    DetectArticleContentTextRisks(newContent, step.StepNumber, errors);
                 }
                 return;
             }
 
-            // 风险1：内容过短（疑似误覆盖）
-            var trimmed = newContent.Trim();
-            if (trimmed.Length < SuspiciouslyShortContentLength)
-            {
-                errors.Add($"Step {step.StepNumber} 新正文长度仅 {trimmed.Length} 字符，极短，疑似误清空或简略占位符。");
-            }
-
-            // 风险2：内容等于常见的“清空占位词”
-            var dangerousPlaceholders = new[] { "略", "删除", "空", "无", "null", "删除全文", "清空" };
-            if (dangerousPlaceholders.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-            {
-                errors.Add($"Step {step.StepNumber} 新正文内容为 '{trimmed}'，疑似恶意清空或占位符误操作。");
-            }
-
-            // 风险3：去除标点和空格后几乎没有有效字符（全是符号）
-            var lettersAndDigits = new string(trimmed.Where(c => char.IsLetterOrDigit(c)).ToArray());
-            if (lettersAndDigits.Length <= 3 && trimmed.Length > 5) // 如 "....." 或 "！！！"
-            {
-                errors.Add($"Step {step.StepNumber} 新正文仅包含标点符号或无意义字符，疑似乱填。");
-            }
-
-            // 风险4：高危敏感关键词
-            if (ContainsSensitiveInstruction(newContent))
-            {
-                errors.Add($"Step {step.StepNumber} 新正文包含高危意图关键词。");
-            }
+            DetectArticleContentTextRisks(newContent, step.StepNumber, errors);
         }
 
-        /// <summary>
-        /// 检测查询分类时的分页风险：top 过大可能导致性能问题或返回过多数据
-        /// </summary>
+        // 检测查询分类时的分页风险：top 过大可能导致性能问题或返回过多数据
         private static void DetectSearchPaginationRisks(AgentPlanStep step, List<string> errors)
         {
             var top = GetIntParam(step.Parameters, "top", 5);
@@ -172,21 +200,17 @@ namespace CuteBlogSystem.Service
             }
         }
 
-        /// <summary>
-        /// 检测“我的文章列表”分页风险：pageSize 过大可能拖垮性能或非用户本意
-        /// </summary>
+        // 检测“我的文章列表”分页风险：top 过大可能拖垮性能或非用户本意
         private static void DetectGetMyArticlesPaginationRisks(AgentPlanStep step, List<string> errors)
         {
-            var pageSize = GetIntParam(step.Parameters, "pageSize", 10);
-            if (pageSize > RiskLargePageSize)
+            var top = GetIntParam(step.Parameters, "top", 10);
+            if (top > RiskLargeTopCount)
             {
-                errors.Add($"Step {step.StepNumber} 请求每页 {pageSize} 条数据，数量异常大，疑似参数错位或意图拉取全量。");
+                errors.Add($"Step {step.StepNumber} 请求返回 {top} 篇自己的文章，数量较大，可能不是用户真实意图。");
             }
         }
 
-        /// <summary>
-        /// 检测删除操作的风险：重点检查是否可能误删全量（如有批量删除标志），以及 ID 是否异常
-        /// </summary>
+        // 检测删除操作的风险：重点检查是否可能误删全量（如有批量删除标志），以及 ID 是否异常
         private static void DetectDeleteRisks(AgentPlanStep step, List<string> errors)
         {
             // 当前 DeleteArticle 只支持单 ID，但如果后续扩展了 batchDelete 或条件删除，这里兜底
@@ -205,6 +229,56 @@ namespace CuteBlogSystem.Service
             }
         }
 
+        // 检测文章正文内容的风险：空内容、过短、占位符、无意义字符、敏感指令
+        private static void DetectArticleContentTextRisks(string? newContent, int stepNumber, List<string> errors)
+        {
+            // 内容为空或空白 → 清空风险
+            if (string.IsNullOrWhiteSpace(newContent))
+            {
+                errors.Add($"Step {stepNumber} 新正文为空，存在清空文章的风险。");
+                return;
+            }
+
+            var trimmed = newContent.Trim();
+
+            // 内容过短 → 可能误清空或简略占位符
+            if (trimmed.Length < SuspiciouslyShortContentLength)
+            {
+                errors.Add($"Step {stepNumber} 新正文长度仅 {trimmed.Length} 字符，极短，疑似误清空或简略占位符。");
+            }
+
+            // 内容为明确的危险占位符（如“删除”、“空”等）→ 恶意清空嫌疑
+            var dangerousPlaceholders = new[] { "略", "删除", "空", "无", "null", "删除全文", "清空" };
+            if (dangerousPlaceholders.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add($"Step {stepNumber} 新正文内容为 '{trimmed}'，疑似恶意清空或占位符误操作。");
+            }
+
+            // 仅包含标点和少量字母数字 → 无意义乱填
+            var lettersAndDigits = new string(trimmed.Where(c => char.IsLetterOrDigit(c)).ToArray());
+            if (lettersAndDigits.Length <= 3 && trimmed.Length > 5)
+            {
+                errors.Add($"Step {stepNumber} 新正文仅包含标点符号或无意义字符，疑似乱填。");
+            }
+
+            // 包含敏感指令关键词 → 高危意图
+            if (ContainsSensitiveInstruction(newContent))
+            {
+                errors.Add($"Step {stepNumber} 新正文包含高危意图关键词。");
+            }
+        }
+
+        // 检测文章修改建议内容风险：敏感字符，空内容
+        private static void DetectGenerateContentRevisionRisks(AgentPlanStep step, List<string> errors)
+        {
+            var instruction = GetStringParam(step.Parameters, "instruction");
+
+            if (ContainsDangerousContentRevisionInstruction(instruction))
+            {
+                errors.Add($"Step {step.StepNumber} 的内容修订指令包含清空/删除正文风险：{instruction}");
+            }
+        }
+
         // ==================== 通用工具方法 ====================
 
         private static string GetStringParam(Dictionary<string, object> parameters, string key)
@@ -217,9 +291,7 @@ namespace CuteBlogSystem.Service
             return AiChatHelper.GetInt(parameters, key, defaultValue);
         }
 
-        /// <summary>
-        /// 扩展后的敏感指令词库（涵盖越权、破坏性、绕过类意图）
-        /// </summary>
+        // 检测是否有扩展后的敏感指令词库（涵盖越权、破坏性、绕过类意图）中的词语
         private static bool ContainsSensitiveInstruction(string text)
         {
             if (string.IsNullOrEmpty(text)) return false;
@@ -235,6 +307,26 @@ namespace CuteBlogSystem.Service
             };
 
             return keywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 检测内容修订指令是否包含危险操作关键词（如“删除所有”、“清空全文”等），用于安全拦截
+        private static bool ContainsDangerousContentRevisionInstruction(string? instruction)
+        {
+            if (string.IsNullOrWhiteSpace(instruction))
+            {
+                return false;
+            }
+
+            // 归一化：去除所有空白字符，提高匹配准确度（防止通过加空格绕过检测）
+            var normalized = instruction
+                .Replace(" ", "")
+                .Replace("\r", "")
+                .Replace("\n", "")
+                .Replace("\t", "");
+
+            // 检查归一化后的指令是否包含危险关键词（不区分大小写）
+            return DangerousContentRevisionInstructions.Any(k =>
+                normalized.Contains(k, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

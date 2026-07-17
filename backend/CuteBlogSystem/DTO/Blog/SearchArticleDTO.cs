@@ -1,4 +1,4 @@
-﻿namespace CuteBlogSystem.DTO
+﻿namespace CuteBlogSystem.DTO.Blog
 {
     public class SearchArticleDTO
     {

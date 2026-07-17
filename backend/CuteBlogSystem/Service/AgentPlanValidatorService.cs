@@ -1,6 +1,8 @@
 ﻿using CuteBlogSystem.AI.Planner;
+using CuteBlogSystem.Enum;
 using CuteBlogSystem.Util;
-using System.Text.Json;
+using System;
+using System.Numerics;
 
 namespace CuteBlogSystem.Service
 {
@@ -103,7 +105,7 @@ namespace CuteBlogSystem.Service
                     break;
 
                 case AgentActionRegistry.SummarizeContent:
-                    RequireIntParameter(step, "contentFromStep", errors);
+                    ValidateSummarizeContentParameters(step, errors);
                     break;
 
                 case AgentActionRegistry.CompareContents:
@@ -136,8 +138,7 @@ namespace CuteBlogSystem.Service
                     break;
 
                 case AgentActionRegistry.AnswerQuestionFromContent:
-                    RequireIntParameter(step, "contentFromStep", errors);
-                    RequireStringParameter(step, "question", errors);
+                    ValidateAnswerQuestionFromContentParameters(step, errors);
                     break;
 
                 case AgentActionRegistry.DeleteArticle:
@@ -168,7 +169,8 @@ namespace CuteBlogSystem.Service
             }
 
             var sortBy = GetStringParameter(step, "sortBy", "Latest");
-            if (!AgentActionRegistry.AllowedSortTypes.Contains(sortBy))
+
+            if (!System.Enum.TryParse<ArticleSortBy>(sortBy, ignoreCase: true, out _))
             {
                 errors.Add($"Step {step.StepNumber} 的 sortBy 不合法：{sortBy}。只能是 Latest、MostLiked、MostViewed。");
             }
@@ -190,7 +192,10 @@ namespace CuteBlogSystem.Service
                     break;
 
                 case AgentActionRegistry.SummarizeContent:
-                    ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    if (GetIntParameter(step, "contentFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    }
                     break;
 
                 case AgentActionRegistry.CompareContents:
@@ -204,7 +209,10 @@ namespace CuteBlogSystem.Service
                     break;
 
                 case AgentActionRegistry.AnswerQuestionFromContent:
-                    ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    if (GetIntParameter(step, "contentFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    }
                     break;
 
                 case AgentActionRegistry.GenerateContentRevision:
@@ -347,10 +355,8 @@ namespace CuteBlogSystem.Service
                 if (step.Action == AgentActionRegistry.ExplainFailureWithSuggestions)
                 {
                     RequireIntParameter(step, "failureFromStep", errors);
-                    RequireIntParameter(step, "categoriesFromStep", errors);
 
                     var failureFromStep = GetIntParameter(step, "failureFromStep");
-                    var categoriesFromStep = GetIntParameter(step, "categoriesFromStep");
 
                     var originalFailureStepExists = failedExecutionResult.StepResults
                         .Any(r => r.StepNumber == failureFromStep && !r.Success);
@@ -360,18 +366,33 @@ namespace CuteBlogSystem.Service
                         errors.Add($"补救计划引用的原始失败步骤不存在或不是失败步骤：Step {failureFromStep}。");
                     }
 
-                    if (categoriesFromStep >= step.StepNumber)
-                    {
-                        errors.Add($"Step {step.StepNumber} 的 categoriesFromStep 只能引用补救计划中之前的步骤。");
-                    }
+                    ValidateOptionalRecoveryReference(
+                        recoveryPlan,
+                        step,
+                        "categoriesFromStep",
+                        AgentActionRegistry.GetAllCategories,
+                        errors);
 
-                    var categoriesStepExists = recoveryPlan.Steps
-                        .Any(s => s.StepNumber == categoriesFromStep && s.Action == AgentActionRegistry.GetAllCategories);
+                    ValidateOptionalRecoveryReference(
+                        recoveryPlan,
+                        step,
+                        "articlesFromStep",
+                        AgentActionRegistry.GetMyArticles,
+                        errors);
 
-                    if (!categoriesStepExists)
-                    {
-                        errors.Add($"补救计划中 categoriesFromStep 引用的步骤不存在或不是 GetAllCategories：Step {categoriesFromStep}。");
-                    }
+                    ValidateOptionalRecoveryReference(
+                        recoveryPlan,
+                        step,
+                        "searchResultsFromStep",
+                        AgentActionRegistry.SearchArticlesByCategory,
+                        errors);
+
+                    ValidateOptionalRecoveryReference(
+                        recoveryPlan,
+                        step,
+                        "contentFromStep",
+                        AgentActionRegistry.GetArticleContentById,
+                        errors);
                 }
             }
 
@@ -380,47 +401,61 @@ namespace CuteBlogSystem.Service
                 : AgentPlanValidationResult.Fail(errors);
         }
 
-        // 验证 UpdateArticleTitle 动作的参数：articleId 必须大于 0，newTitle 不能为空且长度不超过 30
+        // 验证 UpdateArticleTitle 动作参数：articleId 与 articleIdFromStep 必须二选一，且 newTitle 不能为空且长度不超过 30
         private static void ValidateUpdateArticleTitleParameters(
             AgentPlanStep step,
             List<string> errors)
         {
+            // 获取直接提供的文章 ID 和引用步骤编号
             var articleId = GetIntParameter(step, "articleId");
-            if (articleId <= 0)
+            var articleIdFromStep = GetIntParameter(step, "articleIdFromStep");
+
+            // 两者都未提供 → 报错
+            if (articleId <= 0 && articleIdFromStep <= 0)
             {
-                errors.Add($"Step {step.StepNumber} 的 articleId 必须大于 0。");
+                errors.Add($"Step {step.StepNumber} 必须提供 articleId 或 articleIdFromStep。");
             }
 
+            // 两者都提供了 → 报错（只能二选一）
+            if (articleId > 0 && articleIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 articleId 和 articleIdFromStep 只能二选一。");
+            }
+
+            // 获取新标题
             var newTitle = GetStringParameter(step, "newTitle");
+            // 标题不能为空
             if (string.IsNullOrWhiteSpace(newTitle))
             {
                 errors.Add($"Step {step.StepNumber} 缺少 newTitle 参数。");
                 return;
             }
 
+            // 标题长度不能超过 30 个字符
             if (newTitle.Length > 30)
             {
                 errors.Add($"Step {step.StepNumber} 的 newTitle 不能超过 30 个字符。");
             }
         }
 
-        // 验证 GetMyArticles 动作的参数：page 必须大于 0，pageSize 必须在 1~20 之间
-        private static void ValidateGetMyArticlesParameters(
-            AgentPlanStep step,
-            List<string> errors)
+        // 验证 GetMyArticles 动作的参数：sortBy 必须符合枚举，top 必须在 1~20 之间
+        private static void ValidateGetMyArticlesParameters(AgentPlanStep step, List<string> errors)
         {
-            // 获取并验证 page 参数（可选，若存在则必须大于 0）
-            int? page = GetIntParameter(step, "page");
-            if (page.HasValue && page.Value <= 0)
+            var top = GetIntParameter(step, "top", 10);
+            if (top <= 0)
             {
-                errors.Add($"Step {step.StepNumber} 的 page 必须大于 0。");
+                errors.Add($"Step {step.StepNumber} 的 top 必须大于 0。");
             }
 
-            // 获取并验证 pageSize 参数（可选，若存在则必须在 1~20 之间）
-            int? pageSize = GetIntParameter(step, "pageSize");
-            if (pageSize.HasValue && (pageSize.Value <= 0 || pageSize.Value > 20))
+            if (top > 20)
             {
-                errors.Add($"Step {step.StepNumber} 的 pageSize 必须在 1 到 20 之间。");
+                errors.Add($"Step {step.StepNumber} 的 top 不能超过 20。");
+            }
+
+            var sortBy = GetStringParameter(step, "sortBy", "Latest");
+            if (!System.Enum.TryParse<ArticleSortBy>(sortBy, ignoreCase: true, out _))
+            {
+                errors.Add($"Step {step.StepNumber} 的 sortBy 不合法：{sortBy}。只能是 Latest、MostLiked、MostViewed。");
             }
         }
 
@@ -518,6 +553,97 @@ namespace CuteBlogSystem.Service
             if (articleId > 0 && articleIdFromStep > 0)
             {
                 errors.Add($"Step {step.StepNumber} 的 articleId 和 articleIdFromStep 只能二选一，不能同时提供。");
+            }
+        }
+
+        // 验证补救计划中可选引用参数：若参数存在，则检查其引用的步骤是否存在且动作匹配
+        private static void ValidateOptionalRecoveryReference(
+            AgentPlan recoveryPlan,
+            AgentPlanStep currentStep,
+            string parameterName,
+            string expectedAction,
+            List<string> errors)
+        {
+            // 如果参数不存在，视为可选，直接跳过
+            if (!currentStep.Parameters.ContainsKey(parameterName))
+            {
+                return;
+            }
+
+            // 获取引用的步骤编号
+            var fromStep = GetIntParameter(currentStep, parameterName);
+
+            // 编号必须大于 0
+            if (fromStep <= 0)
+            {
+                errors.Add($"Step {currentStep.StepNumber} 的 {parameterName} 必须大于 0。");
+                return;
+            }
+
+            // 只能引用当前步骤之前的步骤
+            if (fromStep >= currentStep.StepNumber)
+            {
+                errors.Add($"Step {currentStep.StepNumber} 的 {parameterName} 只能引用补救计划中之前的步骤。");
+                return;
+            }
+
+            // 检查引用的步骤是否存在，且动作类型匹配预期
+            var exists = recoveryPlan.Steps
+                .Any(s => s.StepNumber == fromStep && s.Action == expectedAction);
+
+            if (!exists)
+            {
+                errors.Add($"补救计划中 {parameterName} 引用的步骤不存在或不是 {expectedAction}：Step {fromStep}。");
+            }
+        }
+
+        // 验证 SummarizeContent 动作参数：content 与 contentFromStep 必须二选一
+        private static void ValidateSummarizeContentParameters(AgentPlanStep step, List<string> errors)
+        {
+            // 获取直接传入的正文内容和引用步骤编号
+            var content = GetStringParameter(step, "content");
+            var contentFromStep = GetIntParameter(step, "contentFromStep");
+
+            // 两者都未提供 → 报错
+            if (string.IsNullOrWhiteSpace(content) && contentFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 content 或 contentFromStep 之一。");
+            }
+
+            // 两者都提供了 → 报错（只能二选一）
+            if (!string.IsNullOrWhiteSpace(content) && contentFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 content 和 contentFromStep 只能二选一，不能同时提供。");
+            }
+        }
+
+        // 验证 AnswerQuestionFromContent 动作参数：content 与 contentFromStep 必须二选一，且 question 不能为空
+        private static void ValidateAnswerQuestionFromContentParameters(
+            AgentPlanStep step,
+            List<string> errors)
+        {
+            // 获取直接传入的正文内容和引用步骤编号
+            var content = GetStringParameter(step, "content");
+            var contentFromStep = GetIntParameter(step, "contentFromStep");
+            // 获取用户问题
+            var question = GetStringParameter(step, "question");
+
+            // 两者都未提供 → 报错
+            if (string.IsNullOrWhiteSpace(content) && contentFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 content 或 contentFromStep 之一。");
+            }
+
+            // 两者都提供了 → 报错（只能二选一）
+            if (!string.IsNullOrWhiteSpace(content) && contentFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 content 和 contentFromStep 只能二选一，不能同时提供。");
+            }
+
+            // 问题不能为空
+            if (string.IsNullOrWhiteSpace(question))
+            {
+                errors.Add($"Step {step.StepNumber} 缺少 question 参数。");
             }
         }
     }

@@ -61,7 +61,7 @@ namespace CuteBlogSystem.Service
             // 更新记忆字段
             memory.LastUserMessage = userMessage;
             memory.LastAnswer = answer;
-            
+
             // 如果该轮进行搜索并搜索到了新文章才对记忆里存储的之前文章的id和title进行更新
             if (selectedArticleId.HasValue)
             {
@@ -92,130 +92,6 @@ namespace CuteBlogSystem.Service
                 answer,
                 selectedArticle.ArticleId,
                 selectedArticle.Title);
-        }
-
-        // 从执行结果中提取用户最后可能选中或讨论的文章（取最后一个成功的搜索文章步骤的数据）
-        private static SelectedArticleMemory ExtractSelectedArticle(
-            AgentPlanExecutionResult? executionResult)
-        {
-            // 如果执行结果为空，直接返回空结果
-            if (executionResult == null)
-            {
-                return new SelectedArticleMemory();
-            }
-
-            // 从所有成功的步骤中，找出 Action 为 SearchArticlesByCategory 且 Data 非空的步骤
-            // 按步骤编号降序排序，取最后一个（即最近一次成功的搜索文章步骤）
-            var searchStep = executionResult.StepResults
-                .Where(s => s.Success && s.Action == AgentActionRegistry.SearchArticlesByCategory && s.Data != null)
-                .OrderByDescending(s => s.StepNumber)
-                .FirstOrDefault();
-
-            // 如果没有找到符合条件的步骤，返回空结果
-            if (searchStep?.Data == null)
-            {
-                return new SelectedArticleMemory();
-            }
-
-            // 从步骤数据的对象中解析出文章ID和标题
-            return ExtractArticleFromData(searchStep.Data);
-        }
-
-        // 从执行步骤的 Data 对象中提取文章信息（ID 和标题），支持多种 JSON 结构
-        private static SelectedArticleMemory ExtractArticleFromData(object data)
-        {
-            // 将任意对象序列化为 JSON 字符串，以便统一解析
-            var json = JsonSerializer.Serialize(data);
-
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            // 如果根节点是数组且非空，取第一个元素作为文章对象
-            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-            {
-                return ExtractArticleFromJsonElement(root[0]);
-            }
-
-            // 处理根节点为对象的情况
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                // 尝试获取常见的包装属性 "data"
-                if (root.TryGetProperty("data", out var dataProperty))
-                {
-                    // 如果 data 属性是数组且非空，取第一个元素
-                    if (dataProperty.ValueKind == JsonValueKind.Array && dataProperty.GetArrayLength() > 0)
-                    {
-                        return ExtractArticleFromJsonElement(dataProperty[0]);
-                    }
-
-                    // 如果 data 属性是对象，直接使用
-                    if (dataProperty.ValueKind == JsonValueKind.Object)
-                    {
-                        return ExtractArticleFromJsonElement(dataProperty);
-                    }
-                }
-
-                // 没有 "data" 包装，直接使用根对象
-                return ExtractArticleFromJsonElement(root);
-            }
-
-            // 无法识别的结构，返回空记忆
-            return new SelectedArticleMemory();
-        }
-
-        // 从 JSON 元素中提取文章信息（ID 和标题），尝试多种常见的属性名
-        private static SelectedArticleMemory ExtractArticleFromJsonElement(JsonElement element)
-        {
-            // 尝试从多个可能的属性名中获取文章 ID
-            var articleId = TryGetIntProperty(element, "id")
-                ?? TryGetIntProperty(element, "articleId")
-                ?? TryGetIntProperty(element, "ArticleId")
-                ?? TryGetIntProperty(element, "Id");
-
-            // 尝试获取文章标题
-            var title = TryGetStringProperty(element, "title")
-                ?? TryGetStringProperty(element, "Title");
-
-            return new SelectedArticleMemory
-            {
-                ArticleId = articleId,
-                Title = title
-            };
-        }
-
-        // 尝试从json串中获取指定名称的整型属性值（支持数字或数字字符串）
-        private static int? TryGetIntProperty(JsonElement element, string propertyName)
-        {
-            if (!element.TryGetProperty(propertyName, out var property))
-            {
-                return null;
-            }
-
-            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number))
-            {
-                return number;
-            }
-
-            if (property.ValueKind == JsonValueKind.String &&
-                int.TryParse(property.GetString(), out var stringNumber))
-            {
-                return stringNumber;
-            }
-
-            return null;
-        }
-
-        // 尝试从json串中获取指定名称的字符串属性值
-        private static string? TryGetStringProperty(JsonElement element, string propertyName)
-        {
-            if (!element.TryGetProperty(propertyName, out var property))
-            {
-                return null;
-            }
-
-            return property.ValueKind == JsonValueKind.String
-                ? property.GetString()
-                : property.ToString();
         }
 
         // 构建带记忆增强的用户消息：如果存在有效的对话记忆，则添加上下文信息帮助 AI 理解指代
@@ -264,36 +140,6 @@ namespace CuteBlogSystem.Service
             }
 
             return string.Join("\n\n", sections);
-        }
-
-        // 判断是否应该使用记忆增强用户消息：如果用户消息中包含指代词且记忆中有有效的选中文章信息，则返回 true；否则返回 false
-        private static bool ShouldUseMemory(
-            string userMessage,
-            AgentConversationMemory memory)
-        {
-            if (memory.LastSelectedArticleId == null)
-            {
-                return false;
-            }
-
-            var keywords = new[]
-            {
-                "它",
-                "这篇",
-                "那篇",
-                "上一篇",
-                "刚刚",
-                "之前",
-                "刚才",
-                "上面",
-                "这个",
-                "该文章",
-                "继续",
-                "详细讲讲",
-                "主要讲了什么"
-            };
-
-            return keywords.Any(userMessage.Contains);
         }
 
         // 尝试对指定会话的未总结消息进行摘要更新，如果满足触发条件则生成新摘要并保存
@@ -443,6 +289,179 @@ namespace CuteBlogSystem.Service
             return await _memoryRepository.UpdateAsync(memory);
         }
 
+        // ==================== 私有方法 ====================
+
+        // 从执行结果中提取用户最后可能选中或讨论的文章（取执行结果中 MemoryFact 的数据）
+        private static SelectedArticleMemory ExtractSelectedArticle(
+            AgentPlanExecutionResult? executionResult)
+        {
+            // 如果执行结果为空，直接返回空结果
+            if (executionResult == null)
+            {
+                return new SelectedArticleMemory();
+            }
+
+            var fact = executionResult.StepResults
+                .Where(s => s.Success && s.MemoryFacts != null)
+                .SelectMany(s => s.MemoryFacts)
+                .Where(f => f.Type == ArticleMemoryType.ArticleSelected && f.ArticleId.HasValue)
+                .LastOrDefault();
+
+            if (fact == null)
+            {
+                return new SelectedArticleMemory();
+            }
+
+            return new SelectedArticleMemory
+            {
+                ArticleId = fact.ArticleId,
+                Title = fact.ArticleTitle
+            };
+        }
+
+        // 从执行步骤的 Data 对象中提取文章信息（ID 和标题），支持多种 JSON 结构
+        private static SelectedArticleMemory ExtractArticleFromData(object data)
+        {
+            // 将任意对象序列化为 JSON 字符串，以便统一解析
+            var json = JsonSerializer.Serialize(data);
+
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            // 如果根节点是数组且非空，取第一个元素作为文章对象
+            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
+            {
+                return ExtractArticleIdAndTitleFromJsonElement(root[0]);
+            }
+
+            // 处理根节点为对象的情况
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                // 尝试获取常见的包装属性 "data"
+                if (root.TryGetProperty("data", out var dataProperty))
+                {
+                    // 如果 data 属性是数组且非空，取第一个元素
+                    if (dataProperty.ValueKind == JsonValueKind.Array && dataProperty.GetArrayLength() > 0)
+                    {
+                        return ExtractArticleIdAndTitleFromJsonElement(dataProperty[0]);
+                    }
+
+                    // 如果 data 属性是对象，直接使用
+                    if (dataProperty.ValueKind == JsonValueKind.Object)
+                    {
+                        if (root.TryGetProperty("Articles", out var articlesProperty) &&
+                            articlesProperty.ValueKind == JsonValueKind.Array &&
+                            articlesProperty.GetArrayLength() > 0)
+                        {
+                            return ExtractArticleIdAndTitleFromJsonElement(articlesProperty[0]);
+                        }
+
+                        if (root.TryGetProperty("articles", out var lowerArticlesProperty) &&
+                            lowerArticlesProperty.ValueKind == JsonValueKind.Array &&
+                            lowerArticlesProperty.GetArrayLength() > 0)
+                        {
+                            return ExtractArticleIdAndTitleFromJsonElement(lowerArticlesProperty[0]);
+                        }
+
+                        return ExtractArticleIdAndTitleFromJsonElement(dataProperty);
+                    }
+                }
+
+                // 没有 "data" 包装，直接使用根对象
+                return ExtractArticleIdAndTitleFromJsonElement(root);
+            }
+
+            // 无法识别的结构，返回空记忆
+            return new SelectedArticleMemory();
+        }
+
+        // 从 JSON 元素中提取文章信息（ID 和标题），尝试多种常见的属性名
+        private static SelectedArticleMemory ExtractArticleIdAndTitleFromJsonElement(JsonElement element)
+        {
+            // 尝试从多个可能的属性名中获取文章 ID
+            var articleId = TryGetIntProperty(element, "id")
+                ?? TryGetIntProperty(element, "articleId")
+                ?? TryGetIntProperty(element, "ArticleId")
+                ?? TryGetIntProperty(element, "Id")
+                ?? TryGetIntProperty(element, "ID");
+
+            // 尝试获取文章标题
+            var title = TryGetStringProperty(element, "title")
+                ?? TryGetStringProperty(element, "Title")
+                ?? TryGetStringProperty(element, "TITLE");
+
+            return new SelectedArticleMemory
+            {
+                ArticleId = articleId,
+                Title = title
+            };
+        }
+
+        // 尝试从json串中获取指定名称的整型属性值（支持数字或数字字符串）
+        private static int? TryGetIntProperty(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var property))
+            {
+                return null;
+            }
+
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number))
+            {
+                return number;
+            }
+
+            if (property.ValueKind == JsonValueKind.String &&
+                int.TryParse(property.GetString(), out var stringNumber))
+            {
+                return stringNumber;
+            }
+
+            return null;
+        }
+
+        // 尝试从json串中获取指定名称的字符串属性值
+        private static string? TryGetStringProperty(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var property))
+            {
+                return null;
+            }
+
+            return property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : property.ToString();
+        }
+
+        // 判断是否应该使用记忆增强用户消息：如果用户消息中包含指代词且记忆中有有效的选中文章信息，则返回 true；否则返回 false
+        private static bool ShouldUseMemory(
+            string userMessage,
+            AgentConversationMemory memory)
+        {
+            if (memory.LastSelectedArticleId == null)
+            {
+                return false;
+            }
+
+            var keywords = new[]
+            {
+                "它",
+                "这篇",
+                "那篇",
+                "上一篇",
+                "刚刚",
+                "之前",
+                "刚才",
+                "上面",
+                "这个",
+                "该文章",
+                "继续",
+                "详细讲讲",
+                "主要讲了什么"
+            };
+
+            return keywords.Any(userMessage.Contains);
+        }
+
         // 根据ID计算生成摘要的ID下界
         private static long? GetLatestBoundaryMessageId(
             long? lastSummarizedMessageId,
@@ -453,7 +472,7 @@ namespace CuteBlogSystem.Service
                 return contextResetMessageId;
             }
 
-            if (!contextResetMessageId.HasValue) 
+            if (!contextResetMessageId.HasValue)
             {
                 return lastSummarizedMessageId;
             }

@@ -1,6 +1,6 @@
 ﻿<script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { getTagArticleCountApi, getTagsApi } from "../api/taxonomy";
+import { getTagArticleCountsBatchApi, getTagsApi } from "../api/taxonomy";
 import bannerTag from "../assets/images/banner-tag.png";
 import decorationShark from "../assets/images/decoration-shark.png";
 import { Tag } from "lucide-vue-next";
@@ -69,14 +69,17 @@ async function loadData() {
 
   tags.value = tagRes.data || [];
 
-  const countResults = await Promise.allSettled(
-    tags.value.map((tag) => getTagArticleCountApi(tag.id))
-  );
+  const tagIds = tags.value.map((tag) => tag.id).filter(Boolean);
+  const countRes = tagIds.length
+    ? await getTagArticleCountsBatchApi(tagIds).catch(() => null)
+    : null;
+
   const map = new Map();
-  countResults.forEach((result, index) => {
-    const tagId = tags.value[index]?.id;
+  (countRes?.data || []).forEach((item) => {
+    const tagId = item.tagId ?? item.TagId;
     if (!tagId) return;
-    map.set(tagId, result.status === "fulfilled" ? Number(result.value.data || 0) : 0);
+    const count = item.count ?? item.Count ?? 0;
+    map.set(tagId, Number(count));
   });
   tagCountMap.value = map;
 

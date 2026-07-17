@@ -28,6 +28,10 @@ export function getTagArticleCountApi(tagId) {
   return http.get(`/api/Tags/articleCounts/${tagId}`);
 }
 
+export function getTagArticleCountsBatchApi(tagIds) {
+  return http.post("/api/Tags/articleCounts/batch", tagIds);
+}
+
 export function createTagApi(payload) {
   return http.post("/api/Tags", payload);
 }

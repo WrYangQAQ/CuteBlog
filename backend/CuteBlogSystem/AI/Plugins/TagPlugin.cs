@@ -1,4 +1,5 @@
-﻿using CuteBlogSystem.Service;
+﻿using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Service;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 
@@ -31,7 +32,7 @@ namespace CuteBlogSystem.AI.Plugins
                 return $"获取标签失败: {response.Message}";
             }
 
-            var tags = response.Data as List<DTO.GetTagDTO>;
+            var tags = response.Data as List<GetTagDTO>;
 
             if (tags == null || tags.Count == 0)
             {

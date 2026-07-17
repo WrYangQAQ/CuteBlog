@@ -51,9 +51,14 @@ namespace CuteBlogSystem.Service
                    - articleId 和 articleIdFromStep 二选一，不要同时输出。
 
                 3. SummarizeContent
-                   用于总结文章正文。
+                   用于总结文章正文或用户直接提供的文本内容。
                    参数：
-                   - contentFromStep：表示从哪一步的结果中取正文内容
+                   - content：用户直接贴出的正文内容。
+                   - contentFromStep：从前置步骤结果中取正文内容。
+                   注意：
+                   - content 和 contentFromStep 必须二选一，不能同时输出。
+                   - 如果用户消息中已经直接提供了要总结的正文，必须使用 content，不要重新搜索文章。
+                   - 如果用户要求总结博客系统中的某篇文章，才先获取文章正文，再用 contentFromStep 总结。
 
                 4. AnswerQuestionFromContent
                    用于根据文章正文回答用户提出的具体问题。
@@ -66,6 +71,7 @@ namespace CuteBlogSystem.Service
                    参数：
                    - contentFromStepA：第一篇正文来自哪一步
                    - contentFromStepB：第二篇正文来自哪一步
+                   - compareFocus：可选，用户指定的比较重点，例如“适合初学者程度”“技术深度”“写作结构”。
 
                 6. GetAllCategories
                    用于获取系统中所有文章分类。
@@ -82,11 +88,11 @@ namespace CuteBlogSystem.Service
                 8. GetMyArticles
                    查询当前登录用户自己的文章列表。
                    参数：
-                   - page：可选，默认 1
-                   - pageSize：可选，默认 10，最大 20
+                   - top：可选，默认 10，最大 20
+                   - sortBy：可选，只能是 Latest、MostLiked、MostViewed
                    注意：
                    - 不需要 userId，系统会使用当前登录用户身份。
-                   - 当用户说“我的文章”、“我发布过哪些文章”、“列出我的博客文章”时使用。
+                   - 不要生成 page 或 pageSize。
 
                 9. UpdateArticleTitle
                    用于修改当前登录用户自己文章的标题。
@@ -102,12 +108,14 @@ namespace CuteBlogSystem.Service
                    - 该动作属于修改操作，执行前系统会要求用户确认。
 
                 10. GenerateContentRevision
-                    用于根据用户指令生成文章的修订版本（不直接写入数据库）。
+                    用于根据用户指令生成文本或文章正文的修订版本（不直接写入数据库）。
+                    适用场景：
+                    - 用户直接贴出文本，要求润色、改写、扩写、缩写、调整风格。
+                    - 已经通过 GetArticleContentById 获取文章正文后，要求修改已有文章内容。
                     参数：
-                    - contentFromStep：必填（或 originalContent），指定原文来源步骤（通常来自 GetArticleContentById）。
-                    - instruction：可选，修改指令，例如“将语气改为更正式”、“精简到500字”、“增加案例说明”等。
-                    注意：
-                    - 该动作只生成新内容，不修改数据库，新内容会存入步骤结果供后续使用。
+                    - originalContent：用户直接提供的原文内容。
+                    - contentFromStep：从前置步骤结果中取正文内容。
+                    - instruction：修改指令。
 
                 11. UpdateArticleContent
                     用于将新内容写入指定文章（修改数据库）。
@@ -148,6 +156,7 @@ namespace CuteBlogSystem.Service
                 }
 
                 规则：
+                - 当前用户消息中显式提供的正文内容，优先级高于长期记忆和最近对话中的文章上下文。
                 - 如果用户要求“最新文章”，sortBy 使用 Latest。
                 - 如果用户要求“点赞最高、点赞最多、最受欢迎”，sortBy 使用 MostLiked。
                 - 如果用户要求“浏览量最高、浏览最多、访问量最高”，sortBy 使用 MostViewed。
@@ -159,7 +168,25 @@ namespace CuteBlogSystem.Service
                   第三步使用 ExplainFailureWithSuggestions，failureFromStep 引用第一步，categoriesFromStep 引用第二步。
                 - 对于这种分类不存在或分类不确定的场景，即使用户要求“点赞最高”“最新”“浏览量最高”，也仍然需要执行 GetAllCategories 来提供补救建议。
                 - 如果用户说“那一篇、第一篇、一篇”，top 使用 1。
-                - 如果用户要求总结文章，必须先查询文章，再获取正文，再总结正文。
+                - 如果用户直接提供了一段文本，并要求“润色、改写、优化表达、扩写、缩写、改得更文学性、改得更正式、改得更口语化、改得更适合初学者阅读”，
+                  必须使用 GenerateContentRevision。
+                  此时不要使用 SummarizeContent。
+                  此时不要使用 UpdateArticleContent，除非用户明确说要修改博客系统中已有文章。
+                  参数必须使用 originalContent 承载用户贴出的原文，instruction 承载用户的修改要求。
+                  示例：
+                  “帮我把下面这段话润色得更具有文学性：xxx”
+                  → Step 1: GenerateContentRevision，originalContent = "xxx"，instruction = "润色得更具有文学性"
+
+                  “把以下内容改得更通俗：xxx”
+                  → Step 1: GenerateContentRevision，originalContent = "xxx"，instruction = "改得更通俗"
+                - 如果用户要求总结“直接贴出的内容、下面这段内容、以下文章内容”，必须生成单步 SummarizeContent，并把用户贴出的正文放入 content。例如：
+                 “帮我总结下面这段文章内容：xxx”
+                  → Step 1: SummarizeContent，content = "xxx"
+                 “总结以下内容：xxx”
+                  → Step 1: SummarizeContent，content = "xxx"
+                - 只有用户明确要求“总结、概括、主要内容、主要讲了什么”时，才使用 SummarizeContent。
+                - 如果用户要求“润色、改写、优化表达、文学性、通俗化”，禁止使用 SummarizeContent，必须使用 GenerateContentRevision。
+                - 如果用户要求总结博客系统中已有的文章，例如“这篇文章主要讲了什么”“总结技术分类点赞最高文章”，才先查询/获取正文，再使用 SummarizeContent(contentFromStep=...)。
                 - 如果后续步骤需要使用前面步骤的文章ID，用 articleIdFromStep 表示。
                 - 如果后续步骤需要使用前面步骤的正文，用 contentFromStep 表示。
                 - 如果用户要求“对比”两篇文章，必须先分别查询两篇文章，再分别获取两篇文章正文，最后使用 CompareContents。
@@ -196,7 +223,8 @@ namespace CuteBlogSystem.Service
                   2. DeleteArticle（articleIdFromStep = 1，删除列表中的第一篇）
 
                 意图区分示例：
-                - “这篇文章主要讲了什么？” → SummarizeContent
+                - “这篇文章主要讲了什么？” 且上下文中有已选中文章
+                    → 先 GetArticleContentById，再 SummarizeContent(contentFromStep=...)
                 - “总结一下这篇文章” → SummarizeContent
                 - “文章中如何解释 var？” → AnswerQuestionFromContent
                 - “有没有介绍变量？” → AnswerQuestionFromContent

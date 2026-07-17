@@ -1,5 +1,6 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.DTO;
+using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
@@ -118,7 +119,7 @@ namespace CuteBlogSystem.Service
                 DisplayArticleDTO displayArticleDTO = new DisplayArticleDTO(article);
 
                 // 返回成功响应
-                return new ApiResponse(true, "获取文章内容成功！", displayArticleDTO);
+                return new ApiResponse(true, "获取文章内容成功！", displayArticleDTO, code:ResponseCode.Success);
             }
             catch (Exception ex)
             {
@@ -126,7 +127,7 @@ namespace CuteBlogSystem.Service
                 _logger.LogError(ex, $"获取文章内容失败！\nex.message:{ex.Message}");
 
                 // 返回失败响应
-                return new ApiResponse(false, $"获取文章内容失败！");
+                return new ApiResponse(false, $"获取文章内容失败！", code:ResponseCode.InternalError);
             }
         }
 
@@ -715,40 +716,7 @@ namespace CuteBlogSystem.Service
         }
 
         // 根据分类名查询文章列表(重载加上具体返回数量)
-        public async Task<ApiResponse> GetArticlesByCategoryNameAsync(string categoryName, int count)
-        {
-            try
-            {
-                // 根据分类名查询该分类id
-                var categoryId = await _categoryRepository.SearchCategoriesByNameAsync(categoryName);
-
-                if (categoryId == null)
-                {
-                    return new ApiResponse(false, $"未找到分类名为'{categoryName}'的分类！", null);
-                }
-
-                // 调用仓储层，根据分类名查询文章列表
-                List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
-
-                // 对文章列表按发布时间进行降序排序，将文章列表转换为 DTO
-                var articleListDTOs = articles
-                    .OrderByDescending(article => article.CreatedAt)
-                    .Select(article => new GetArticleListDTO(article)).Take(count).ToList();
-
-                // 返回成功响应
-                return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
-            }
-            catch (Exception ex)
-            {
-                // 记录异常日志
-                _logger.LogError(ex, $"根据分类名'{categoryName}'查询文章列表失败！\nex.message:{ex.Message}");
-                // 返回失败响应
-                return new ApiResponse(false, $"根据分类名'{categoryName}'查询文章列表失败！", null);
-            }
-        }
-
-        // 根据分类名查询文章列表(重载加上具体返回数量和排序方式)
-        public async Task<ApiResponse> GetArticlesByCategoryNameAsync(string categoryName, int count, string sortBy)
+        public async Task<ApiResponse> GetArticlesByCategoryNameAsync(string categoryName, ArticleSortBy sortBy)
         {
             try
             {
@@ -766,9 +734,49 @@ namespace CuteBlogSystem.Service
                 // 对文章列表按排序方式进行排序
                 articles = sortBy switch
                 {
-                    "Latest" => articles.OrderByDescending(a => a.CreatedAt).ToList(),
-                    "MostLiked" => articles.OrderByDescending(a => a.LikeCount).ToList(),
-                    "MostViewed" => articles.OrderByDescending(a => a.ViewCount).ToList(),
+                    ArticleSortBy.Latest => articles.OrderByDescending(a => a.CreatedAt).ToList(),
+                    ArticleSortBy.MostLiked => articles.OrderByDescending(a => a.LikeCount).ToList(),
+                    ArticleSortBy.MostViewed => articles.OrderByDescending(a => a.ViewCount).ToList(),
+                    _ => articles.OrderByDescending(a => a.CreatedAt).ToList()
+                };
+
+                // 将文章列表转换为 DTO
+                var articleListDTOs = articles
+                    .Select(article => new GetArticleListDTO(article)).ToList();
+                // 返回成功响应
+                return new ApiResponse(true, $"根据分类名'{categoryName}'查询文章列表成功！", articleListDTOs);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                _logger.LogError(ex, $"根据分类名'{categoryName}'查询文章列表失败！\nex.message:{ex.Message}");
+                // 返回失败响应
+                return new ApiResponse(false, $"根据分类名'{categoryName}'查询文章列表失败！", null);
+            }
+        }
+
+        // 根据分类名查询文章列表(重载加上具体返回数量和排序方式)
+        public async Task<ApiResponse> GetArticlesByCategoryNameAsync(string categoryName, int count, ArticleSortBy sortBy)
+        {
+            try
+            {
+                // 根据分类名查询该分类id
+                var categoryId = await _categoryRepository.SearchCategoriesByNameAsync(categoryName);
+
+                if (categoryId == null)
+                {
+                    return new ApiResponse(false, $"未找到分类名为'{categoryName}'的分类！", null);
+                }
+
+                // 调用仓储层，根据分类名查询文章列表
+                List<Article> articles = await _articleRepository.GetArticlesByCategoryAsync(categoryId);
+
+                // 对文章列表按排序方式进行排序
+                articles = sortBy switch
+                {
+                    ArticleSortBy.Latest => articles.OrderByDescending(a => a.CreatedAt).ToList(),
+                    ArticleSortBy.MostLiked => articles.OrderByDescending(a => a.LikeCount).ToList(),
+                    ArticleSortBy.MostViewed => articles.OrderByDescending(a => a.ViewCount).ToList(),
                     _ => articles.OrderByDescending(a => a.CreatedAt).ToList()
                 };
 

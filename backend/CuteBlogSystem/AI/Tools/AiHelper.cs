@@ -1,37 +1,39 @@
-﻿namespace CuteBlogSystem.AI.Tools
+﻿using CuteBlogSystem.Enum;
+
+namespace CuteBlogSystem.AI.Tools
 {
     public static class AiHelper
     {
-        public static string NormalizeSortBy(string? sortBy)
+        public static ArticleSortBy NormalizeSortBy(string? sortBy)
         {
             if (string.IsNullOrWhiteSpace(sortBy))
             {
-                return "Latest";
+                return ArticleSortBy.Latest;
             }
 
             sortBy = sortBy.Trim();
 
             return sortBy switch
             {
-                "Latest" => "Latest",
-                "MostLiked" => "MostLiked",
-                "MostViewed" => "MostViewed",
+                "Latest" => ArticleSortBy.Latest,
+                "MostLiked" => ArticleSortBy.MostLiked,
+                "MostViewed" => ArticleSortBy.MostViewed,
 
-                "最新" => "Latest",
-                "最新发布" => "Latest",
-                "时间" => "Latest",
+                "最新" => ArticleSortBy.Latest,
+                "最新发布" => ArticleSortBy.Latest,
+                "时间" => ArticleSortBy.Latest,
 
-                "点赞" => "MostLiked",
-                "点赞最多" => "MostLiked",
-                "点赞最高" => "MostLiked",
-                "最受欢迎" => "MostLiked",
+                "点赞" => ArticleSortBy.MostLiked,
+                "点赞最多" => ArticleSortBy.MostLiked,
+                "点赞最高" => ArticleSortBy.MostLiked,
+                "最受欢迎" => ArticleSortBy.MostLiked,
 
-                "浏览" => "MostViewed",
-                "浏览量" => "MostViewed",
-                "浏览最多" => "MostViewed",
-                "访问量最高" => "MostViewed",
+                "浏览" => ArticleSortBy.MostViewed,
+                "浏览量" => ArticleSortBy.MostViewed,
+                "浏览最多" => ArticleSortBy.MostViewed,
+                "访问量最高" => ArticleSortBy.MostViewed,
 
-                _ => "Latest"
+                _ => ArticleSortBy.Latest
             };
         }
     }

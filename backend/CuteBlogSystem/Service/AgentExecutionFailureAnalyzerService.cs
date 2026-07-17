@@ -41,6 +41,10 @@ namespace CuteBlogSystem.Service
                 3. 再说明失败原因。
                 4. 最后给用户一个可操作的建议。
                 5. 回答要简洁、清楚。
+                6. 如果失败涉及写入、修改、删除、清空、覆盖等操作，不要建议用户绕过安全检查。
+                7. 不要建议直接调用 UpdateArticleContent、UpdateArticleTitle、DeleteArticle 等写操作接口。
+                8. 不要建议跳过 GenerateContentRevision、跳过确认、跳过权限或参数校验。
+                9. 如果失败原因与高风险参数、安全检查、清空正文、删除内容有关，应明确告诉用户：该请求因安全风险未被执行，并建议用户重新描述一个具体、安全、非清空式的修改目标。
                 """),
 
                 new(ChatRole.User,

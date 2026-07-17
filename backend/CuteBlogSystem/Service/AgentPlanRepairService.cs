@@ -54,7 +54,8 @@ namespace CuteBlogSystem.Service
 
                 3. SummarizeContent
                    参数：
-                   - contentFromStep：必须引用之前某一步
+                   - content：用户直接提供的正文内容
+                   - contentFromStep：从前置步骤读取正文
 
                 4. AnswerQuestionFromContent
                    参数：
@@ -82,12 +83,16 @@ namespace CuteBlogSystem.Service
                 - 后续步骤只能引用之前步骤，不能引用当前或未来步骤。
                 - 不允许使用未列出的 action。
                 - sortBy 只能使用 Latest、MostLiked、MostViewed。
-                - 如果用户要求总结，必须先查询文章，再获取正文，再总结。
+                - 如果用户要求总结用户直接贴出的内容，直接使用 SummarizeContent(content=用户提供的正文)。
+                - 如果用户要求总结博客系统中的某篇文章，才先查询/获取正文，再总结。
                 - 如果用户要求对比，必须先查询两篇文章，再分别获取正文，再对比。
                 - 只有用户明确要求总结、概括或询问“主要讲了什么”时，才使用 SummarizeContent。
                 - 用户询问文章中的具体知识点时，必须使用 AnswerQuestionFromContent。
                 - AnswerQuestionFromContent 前必须先使用 GetArticleContentById 获取正文。
                 - question 必须保留用户当前的具体问题。
+                - 执行 SummarizeContent 时参数 content 和 contentFromStep 二选一
+                - 如果用户消息里已经贴出要总结的正文，必须直接使用 content，不要重新搜索文章
+                - 如果用户要求总结某篇博客系统内文章，才先 GetArticleContentById，再 SummarizeContent(contentFromStep=...)
                 """),
 
                 new(ChatRole.User,

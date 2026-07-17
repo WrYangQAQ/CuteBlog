@@ -1,4 +1,6 @@
-﻿namespace CuteBlogSystem.AI.Planner
+﻿using CuteBlogSystem.DTO.Agent;
+
+namespace CuteBlogSystem.AI.Planner
 {
     public class AgentPlanExecutionResult
     {
@@ -28,5 +30,8 @@
 
         // 执行后返回的附加数据，例如文章列表、正文内容或摘要等，无数据时为 null
         public object? Data { get; set; }
+
+        // 用于让 Agent 提取会话记忆的数据列表
+        public List<AgentMemoryFact> MemoryFacts { get; set; } = new();
     }
 }

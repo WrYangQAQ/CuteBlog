@@ -1,9 +1,10 @@
-﻿using CuteBlogSystem.DTO;
-using CuteBlogSystem.Service;
+﻿using CuteBlogSystem.Service;
 using CuteBlogSystem.AI.Tools;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Text;
+using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Enum;
 
 namespace CuteBlogSystem.AI.Plugins
 {
@@ -79,14 +80,17 @@ namespace CuteBlogSystem.AI.Plugins
                 return "请提供一个有效的分类名称";
             }
 
+            ArticleSortBy articleSortBy;
+
             if (sortBy == null)
             {
-                sortBy = "Latest"; // 默认使用 Latest
+                articleSortBy = ArticleSortBy.Latest;
             }
             else
             {
-                sortBy = AiHelper.NormalizeSortBy(sortBy);
+                articleSortBy = AiHelper.NormalizeSortBy(sortBy);
             }
+
 
             _logger.LogInformation(
                 "调用 GetArticlesByCategoryAsync，分类：{CategoryName}，数量：{Count}，排序：{SortBy}",
@@ -94,7 +98,7 @@ namespace CuteBlogSystem.AI.Plugins
                 count,
                 sortBy);
 
-            var response = await _articleService.GetArticlesByCategoryNameAsync(categoryName, count, sortBy);
+            var response = await _articleService.GetArticlesByCategoryNameAsync(categoryName, count, articleSortBy);
 
             if (!response.Success)
             {

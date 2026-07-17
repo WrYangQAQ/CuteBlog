@@ -6,20 +6,59 @@ export function toAbsoluteAsset(url) {
   return `${API_ORIGIN}${url}`;
 }
 
-export function formatDate(dateText) {
-  if (!dateText) return "-";
+const CHINA_TIME_ZONE = "Asia/Shanghai";
 
-  const hasZone = /Z$|[+-]\d{2}:\d{2}$/.test(dateText);
-  const normalized = hasZone ? dateText : `${dateText}Z`;
+export function parseUtcDate(dateText) {
+  if (!dateText) return null;
+  if (dateText instanceof Date) {
+    return Number.isNaN(dateText.getTime()) ? null : dateText;
+  }
+
+  const text = String(dateText);
+  const hasZone = /Z$|[+-]\d{2}:\d{2}$/.test(text);
+  const normalized = hasZone ? text : `${text}Z`;
   const date = new Date(normalized);
-  const local = new Date(
-    date.toLocaleString("en-US", {
-      timeZone: "Asia/Shanghai"
-    })
-  );
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
-  const year = local.getFullYear();
-  const month = local.getMonth() + 1;
-  const day = local.getDate();
+export function getChinaDateParts(dateText) {
+  const date = parseUtcDate(dateText);
+  if (!date) return null;
+
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: CHINA_TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric"
+  }).formatToParts(date);
+
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+    day: Number(parts.find((part) => part.type === "day")?.value)
+  };
+}
+
+export function formatDate(dateText) {
+  const parts = getChinaDateParts(dateText);
+  if (!parts) return "-";
+
+  const { year, month, day } = parts;
   return `${year}年${month}月${day}日`;
+}
+
+export function formatDateTime(dateText) {
+  const date = parseUtcDate(dateText);
+  if (!date) return dateText ? String(dateText) : "-";
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: CHINA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date);
 }

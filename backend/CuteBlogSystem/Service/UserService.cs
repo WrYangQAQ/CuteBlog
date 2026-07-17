@@ -1,5 +1,6 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.DTO;
+using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
@@ -263,7 +264,7 @@ namespace CuteBlogSystem.Service
             return new ApiResponse(true, "上传网页装饰素材图片成功！", imageUrl);
         }
 
-        // 获取自己发布的文章列表方法，接收一个用户ID作为参数，返回一个ApiResponse对象
+        // 获取自己发布的文章列表方法，接收一个用户ID作为参数，返回一个ApiResponse对象，对返回进行分页处理
         public async Task<ApiResponse> GetMyArticlesAsync(int userId, int page, int pageSize)
         {
             if(page <= 0 || pageSize <= 0)
@@ -276,7 +277,8 @@ namespace CuteBlogSystem.Service
                 _logger.LogWarning("每页记录数不能超过20！用户ID：{UserId}, 页码：{Page}, 每页记录数：{PageSize}", userId, page, pageSize);
                 return new ApiResponse(false, "每页记录数不能超过20！");
             }
-                var user = await _userRepository.GetUserByIdAsync(userId);
+                
+            var user = await _userRepository.GetUserByIdAsync(userId);
             if (user == null)
             {
                 _logger.LogWarning("获取文章列表失败！用户不存在！用户ID：{UserId}", userId);
@@ -307,6 +309,34 @@ namespace CuteBlogSystem.Service
                     Items = getArticleListDTOs,
                     TotalCount = totalCount
                 }
+            );
+        }
+
+        // 获取自己发布的文章列表方法，接收一个用户ID作为参数，返回一个ApiResponse对象
+        public async Task<ApiResponse> GetMyArticlesAsync(int userId)
+        {
+            var user = await _userRepository.GetUserByIdAsync(userId);
+            if (user == null)
+            {
+                _logger.LogWarning("获取文章列表失败！用户不存在！用户ID：{UserId}", userId);
+                return new ApiResponse(false, "用户不存在！");
+            }
+
+            var articles = await _articleRepository.GetArticlesByUserIdAsync(userId);
+
+            // 将Article实体列表转换为GetArticleListDTO列表
+            var getArticleListDTOs = articles.Select(article => new GetArticleListDTO(article)).ToList();
+
+            // 对GetArticlesListDTO列表按照创建时间进行降序排序
+            getArticleListDTOs = getArticleListDTOs.OrderByDescending(dto => dto.CreatedAt).ToList();
+
+            int totalCount = articles.Count;  // 获取总记录数
+
+            return new ApiResponse(
+                true,
+                "获取自己发布的文章列表成功！",
+                getArticleListDTOs,
+                code: ResponseCode.Success
             );
         }
     }

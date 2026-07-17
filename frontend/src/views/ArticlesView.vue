@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getArticlesApi, getArticlesByCategoryApi, searchArticlesApi } from "../api/articles";
 import { getCategoriesApi } from "../api/taxonomy";
-import { toAbsoluteAsset } from "../utils/asset";
+import { formatDate, toAbsoluteAsset } from "../utils/asset";
 import bannerArticle from "../assets/images/banner-article.png";
 import decorationShark from "../assets/images/decoration-shark.png";
 import { BookOpenText, Eye, Heart } from "lucide-vue-next";
@@ -148,7 +148,7 @@ onMounted(loadData);
                 <span v-for="tag in (item.tagNames || []).slice(0, 4)" :key="tag" class="tag">{{ tag }}</span>
               </div>
               <div class="meta">
-                <span>{{ item.createdAt?.slice(0, 10) }}</span>
+                <span>{{ formatDate(item.createdAt) }}</span>
                 <span><Eye :size="15" class="meta-icon" /> {{ item.viewCount }}</span>
                 <span><Heart :size="15" class="meta-icon" /> {{ item.likeCount }}</span>
               </div>

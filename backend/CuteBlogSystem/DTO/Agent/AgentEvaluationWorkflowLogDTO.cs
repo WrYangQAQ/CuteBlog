@@ -1,6 +1,6 @@
 ﻿using CuteBlogSystem.Entity;
 
-namespace CuteBlogSystem.DTO
+namespace CuteBlogSystem.DTO.Agent
 {
     public class AgentEvaluationWorkflowLogDTO
     {

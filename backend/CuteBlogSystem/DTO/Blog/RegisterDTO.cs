@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace CuteBlogSystem.DTO
+namespace CuteBlogSystem.DTO.Blog
 {
     public class RegisterDTO
     {

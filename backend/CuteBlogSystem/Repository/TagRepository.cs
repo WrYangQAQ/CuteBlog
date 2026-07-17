@@ -1,7 +1,7 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.Entity;
-using CuteBlogSystem.DTO;
 using Microsoft.EntityFrameworkCore;
+using CuteBlogSystem.DTO.Blog;
 
 namespace CuteBlogSystem.Repository
 {
@@ -132,6 +132,25 @@ namespace CuteBlogSystem.Repository
         {
             var tags = await _dbContext.Tags.Where(t => tagIds.Contains(t.Id)).ToListAsync();
             return tags.Select(t => t.Name).ToList();
+        }
+
+        // 批量获取每个标签对应的文章数量，避免按标签逐个 Count 造成 N+1 查询
+        public async Task<List<TagArticleCountDTO>> GetArticleCountsByTagIdsAsync(List<int> tagIds)
+        {
+            if (tagIds == null || tagIds.Count == 0)
+            {
+                return new List<TagArticleCountDTO>();
+            }
+
+            return await _dbContext.ArticleTags
+                .Where(at => tagIds.Contains(at.TagId))
+                .GroupBy(at => at.TagId)
+                .Select(g => new TagArticleCountDTO
+                {
+                    TagId = g.Key,
+                    Count = g.Count()
+                })
+                .ToListAsync();
         }
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using CuteBlogSystem.Config;
+using CuteBlogSystem.DTO.Blog;
 
 namespace CuteBlogSystem.Controller
 {
@@ -63,6 +64,14 @@ namespace CuteBlogSystem.Controller
         public async Task<IActionResult> GetArticlesCountsByTagIdAsync([FromRoute] int tagId)
         {
             ApiResponse response = await _tagService.GetArticleCountByTagIdAsync(tagId);
+            return ReturnResponse(response);
+        }
+
+        [Authorize]
+        [HttpPost("articleCounts/batch")]
+        public async Task<IActionResult> GetArticleCountsByTagIdsAsync([FromBody] List<int> tagIds)
+        {
+            ApiResponse response = await _tagService.GetArticleCountsByTagIdsAsync(tagIds);
             return ReturnResponse(response);
         }
     }

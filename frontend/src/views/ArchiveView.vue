@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getArticlesApi } from "../api/articles";
-import { formatDate } from "../utils/asset";
+import { formatDate, getChinaDateParts } from "../utils/asset";
 import bannerCategory from "../assets/images/banner-category.png";
 import decorationShark from "../assets/images/decoration-shark.png";
 import { Archive } from "lucide-vue-next";
@@ -15,9 +15,10 @@ const articles = ref([]);
 const grouped = computed(() => {
   const map = new Map();
   (articles.value || []).forEach((a) => {
-    const date = new Date(a.createdAt);
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
+    const date = getChinaDateParts(a.createdAt);
+    if (!date) return;
+    const year = date.year;
+    const month = date.month;
     if (!map.has(year)) map.set(year, new Map());
     const m = map.get(year);
     if (!m.has(month)) m.set(month, []);

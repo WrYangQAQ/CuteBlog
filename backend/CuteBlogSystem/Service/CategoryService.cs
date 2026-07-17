@@ -1,6 +1,8 @@
 ﻿using CuteBlogSystem.DTO;
+using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Repository;
+using CuteBlogSystem.Enum;
 using System.Text;
 
 namespace CuteBlogSystem.Service
@@ -34,9 +36,9 @@ namespace CuteBlogSystem.Service
             List<GetCategoryDTO> categoryListDTOs = categories.Select(c => new GetCategoryDTO(c)).ToList();
             if (categoryListDTOs == null || categoryListDTOs.Count == 0)
             {
-                return new ApiResponse(false, "目前还没有分类！");
+                return new ApiResponse(false, "目前还没有分类！", code: ResponseCode.NotFound);
             }
-            return new ApiResponse(true, "获取分类成功！", categoryListDTOs);
+            return new ApiResponse(true, "获取分类成功！", categoryListDTOs, ResponseCode.Success);
         }
 
         // 根据id删除分类

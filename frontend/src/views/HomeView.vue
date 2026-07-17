@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { getArticlesApi, getRecommendedArticlesApi, getToppedArticlesApi } from "../api/articles";
-import { formatDate, toAbsoluteAsset } from "../utils/asset";
+import { formatDate, parseUtcDate, toAbsoluteAsset } from "../utils/asset";
 import bannerHome from "../assets/images/banner-home.png";
 import heroShark from "../assets/images/hero-shark.png";
 import { PartyPopper, Eye, Heart } from "lucide-vue-next";
@@ -21,7 +21,7 @@ const profileBio = computed(() => profile.value.bio || "前后端学习中，喜
 
 const latestArticles = computed(() => {
   return [...(allArticles.value || [])]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => (parseUtcDate(b.createdAt)?.getTime() || 0) - (parseUtcDate(a.createdAt)?.getTime() || 0))
     .slice(0, 4);
 });
 

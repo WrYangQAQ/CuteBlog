@@ -62,6 +62,9 @@ namespace CuteBlogSystem.AI.Planner
         public static readonly HashSet<string> AllowedRecoveryActions = new()
         {
             GetAllCategories,
+            GetMyArticles,
+            SearchArticlesByCategory,
+            GetArticleContentById,
             ExplainFailureWithSuggestions
         };
 

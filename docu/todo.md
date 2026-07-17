@@ -1,48 +1,46 @@
 # Agent 后续学习路线：Todo
 
-更新时间：2026-07-04
+更新时间：2026-07-16
 
-## 1. 参数级权限与风险控制
-
-优先级：中高
-
-当前已经做到 Action 级风险控制，后续可以升级到参数级。
-
-示例：
-
-- 查询文章：ReadOnly
-- 删除自己的草稿：RequireConfirmation
-- 删除自己已发布文章：RequireConfirmation + 二次确认
-- 删除他人文章：Forbidden
-- 批量删除：Forbidden 或管理员确认
-
-需要学习：
-
-- 用户权限判断
-- 资源归属判断
-- 参数级风险识别
-- 高风险操作审计
-- 风险判断结果写入 WorkflowLog 或确认记录
-
-目标：
-
-```text
-不只判断“这个 Action 能不能执行”，还要判断“这次参数下该不该执行”。
-```
-
-## 2. 工具输入输出类型系统
+## 1. 工具输入输出类型系统
 
 优先级：中
 
 目标：减少 object / JSON 猜测，让 Action 更像稳定 API。
 
+当前进度：
+
+- 已开始为 Action 拆分独立 Input / Output DTO
+- 已完成 7 个 Action 的 DTO 标准化
+- 已完成 `SearchArticlesByCategory`
+- 已完成 `GetArticleContentById`
+- 已完成 `SummarizeContent`
+- 已完成 `AnswerQuestionFromContent`
+- 已完成 `CompareContents`
+- 已完成 `GetMyArticles`
+- 已完成 `UpdateArticleTitle`
+- `ArticleSortBy` 已统一为枚举表达
+- 已引入 `IUserReadableOutput`
+- 已引入 `IAgentContentOutput`
+- 已引入 `IAgentArticleReferenceOutput`
+- 已引入 `AgentMemoryFact`，避免 MemoryService 直接解析各种 Output DTO
+
+剩余待 DTO 标准化的 Action：
+
+- `GetAllCategories`
+- `ExplainFailureWithSuggestions`
+- `GenerateContentRevision`
+- `UpdateArticleContent`
+- `DeleteArticle`
+
 可以实现：
 
-- 每个 Action 独立 Input DTO
-- 每个 Action 独立 Output DTO
+- 继续为剩余 Action 独立 Input DTO
+- 继续为剩余 Action 独立 Output DTO
 - Executor 按 Action 做强类型分发
 - FinalAnswer 根据 Output 类型生成回答
 - 工具结果 Schema 校验
+- 逐步减少 `object Data` 与 JSON 正则猜测
 
 意义：
 
@@ -50,7 +48,7 @@
 Agent 的工具层越稳定，最终回答越可靠。
 ```
 
-## 3. 更强的长期 Memory 策略
+## 2. 更强的长期 Memory 策略
 
 优先级：中
 
@@ -66,6 +64,40 @@ Agent 的工具层越稳定，最终回答越可靠。
 - 记忆过期策略
 - 记忆冲突处理
 - 向量记忆
+
+## 3. 文章定位能力增强
+
+优先级：中
+
+当前情况：
+
+- `articleIdFromStep` 默认取上一步结果中的第一篇文章
+- 适合“点赞最高 / 浏览量最高 / 最新”这类排序后取第一项的任务
+- 如果用户想按标题、关键词或更具体条件选中文章，目前能力还不够自然
+
+后续可以新增 Action：
+
+- `FindMyArticleByTitle`
+- 或更通用的 `FindMyArticle`
+
+建议第一阶段先做：
+
+```text
+FindMyArticleByTitle
+```
+
+设计方向：
+
+- 输入：`TitleKeyword`
+- 输出：匹配文章列表
+- 只在唯一匹配时实现 `IAgentArticleReferenceOutput.GetPrimaryArticleId`
+- 多篇匹配时不自动修改，让 Agent 追问用户选择哪一篇
+
+意义：
+
+```text
+让“把我那篇 Redis 文章改名”这类自然表达，可以先定位文章，再进入确认和写操作。
+```
 
 ## 4. 多轮任务状态机
 
@@ -168,15 +200,22 @@ Agent 的工具层越稳定，最终回答越可靠。
 
 ## 推荐下一步
 
-建议下一步进入：
+建议下一步继续：
 
 ```text
-参数级权限与风险控制
+工具输入输出类型系统
 ```
 
 原因：
 
 ```text
-当前 Agent 已经能计划、执行、确认、评估和复现。
-下一步应该让系统能根据参数、用户身份和资源归属判断风险，进一步提升安全边界。
+目前已完成 7 个 Action，还剩 5 个 Action。
+把现有 Action 的 DTO 地基铺完，再回头新增文章定位类 Action，会更稳。
+```
+
+下一小步建议：
+
+```text
+继续按 Action 逐个拆 Input / Output DTO。
+优先处理 GenerateContentRevision、UpdateArticleContent。
 ```

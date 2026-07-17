@@ -1,4 +1,5 @@
-﻿using CuteBlogSystem.Entity;
+﻿using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Entity;
 
 namespace CuteBlogSystem.DTO
 {

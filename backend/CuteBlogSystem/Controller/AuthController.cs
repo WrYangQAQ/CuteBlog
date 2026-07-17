@@ -1,5 +1,6 @@
 ﻿using CuteBlogSystem.Config;
 using CuteBlogSystem.DTO;
+using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Service;

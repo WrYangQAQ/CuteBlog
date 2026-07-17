@@ -1,6 +1,6 @@
 # Agent 开发阶段总结：Done
 
-更新时间：2026-07-04
+更新时间：2026-07-16
 
 ## 1. Agent 主流程
 
@@ -245,7 +245,166 @@ Run -> Result -> TestCaseSnapshotJson -> WorkflowLogId -> ReportSnapshot -> Sour
 - 这次评估是否复现旧批次
 - 这次评估的报告归档内容是什么
 
-## 15. 当前阶段定位
+## 15. Action 扩展与写操作确认
+
+已经完成文章写操作相关 Action 的第一轮扩展：
+
+- `GetMyArticles`
+- `UpdateArticleTitle`
+- `GenerateContentRevision`
+- `UpdateArticleContent`
+- `DeleteArticle`
+
+当前策略：
+
+- 修改标题：需要确认后执行
+- 修改文章内容：需要确认后执行
+- 删除文章：注册为 Action，但当前保持 `Forbidden`
+- 查询文章列表：只读操作
+- 内容修订：只生成候选内容，不直接写库
+
+已经验证：
+
+- 修改自己的文章标题可以进入确认流程并成功执行
+- 修改他人文章会被权限校验拒绝
+- 删除文章请求会被安全边界拒绝
+
+## 16. 参数级权限控制
+
+已经完成参数级权限校验的基础能力：
+
+- 根据 Action 和参数判断资源归属
+- `UpdateArticleTitle` 校验文章是否属于当前用户
+- `UpdateArticleContent` 校验文章是否属于当前用户
+- 拦截越权修改他人文章
+- 禁止用户通过参数注入 `userId`、`role`、`isAdmin`、`ownerId` 等身份字段
+- 参数 key 使用大小写不敏感处理
+- 确认执行与正常执行都会经过参数权限校验
+
+核心认识：
+
+```text
+Action 允许执行，不代表这一次参数允许执行。
+```
+
+## 17. 参数级风险控制
+
+已经完成参数语义风险嗅探：
+
+- 新标题为空或过短时拦截
+- 新标题包含换行时拦截
+- 新正文直接为空时拦截
+- 新正文过短、占位词、疑似清空时拦截
+- 查询数量异常大时拦截
+- 敏感或破坏性关键词拦截
+- `AgentParameterRiskService` 职责明确为“参数语义安检”
+
+已经明确分层：
+
+```text
+PlanValidator：检查结构是否合法。
+PermissionService：检查用户能不能操作这个资源。
+RiskService：检查参数值是否像误操作或高风险输入。
+Executor：真正执行 Action。
+```
+
+## 18. 执行期结果风险控制
+
+已经完成执行期真实结果风险控制：
+
+- `UpdateArticleContent` 在写库前解析真实 `newContent`
+- `newContentFromStep` 会先从前置步骤结果中取出真实内容
+- 写库前调用参数风险服务进行最后校验
+- 拦截空正文、极短正文、占位词正文
+- 拦截疑似清空、覆盖、破坏性生成结果
+- `GenerateContentRevision` 的高风险修改指令也会被校验
+- 正常执行与确认执行都保留风险校验
+- 执行失败会进入 WorkflowLog 与 Evaluation 链路
+- 已新增并通过 Case 7：高风险清空正文安全拦截
+
+当前形成了三层防线：
+
+```text
+计划阶段参数风险校验 -> 确认执行前再次校验 -> 执行期真实结果写库前校验
+```
+
+核心认识：
+
+```text
+计划看起来安全，不代表工具最终生成出的真实结果一定安全。
+写操作必须在落库前做最后一道结果风险检查。
+```
+
+## 19. 工具输入输出类型系统起步
+
+已经开始将 Action 从松散 `object / JSON` 结构升级为更稳定的输入输出模型：
+
+- 新增 `SearchArticlesByCategoryInput`
+- 新增 `SearchArticlesByCategoryOutput`
+- 新增 `ArticleSearchResultItem`
+- `SearchArticlesByCategory` 执行结果改为结构化 Output DTO
+- `ArticleSortBy` 改为枚举表达
+- 查询时先拿完整分类文章列表，再根据 `top` 截断展示，保留真实 `TotalCount`
+- 新增 `IUserReadableOutput`
+- 新增 `IAgentContentOutput`
+- 新增 `IAgentArticleReferenceOutput`
+
+同时，为避免 MemoryService 直接解析每个 Action 的 Output DTO，已加入统一记忆事实层：
+
+- 新增 `AgentMemoryFact`
+- 新增 `ArticleMemoryType`
+- `AgentStepExecutionResult` 增加 `MemoryFacts`
+- `SearchArticlesByCategory` 会产出 `ArticleQueried` 事实
+- `SearchArticlesByCategory` 会产出 `ArticleSelected` 事实
+- MemoryService 只消费 `ArticleSelected` 更新现有 `LastSelectedArticleId / LastSelectedArticleTitle`
+
+当前策略：
+
+```text
+Action 自己决定哪些结果值得记忆。
+MemoryService 不再猜测每个 Action Output DTO 的结构。
+长期 Memory 拓宽暂缓到后续 Memory 阶段再做。
+```
+
+## 20. 七个 Action DTO 标准化
+
+当前已经完成 7 个 Action 的 Input / Output DTO 标准化：
+
+- `SearchArticlesByCategory`
+- `GetArticleContentById`
+- `SummarizeContent`
+- `AnswerQuestionFromContent`
+- `CompareContents`
+- `GetMyArticles`
+- `UpdateArticleTitle`
+
+已经验证的能力：
+
+- 按分类查询点赞最高文章
+- 获取文章正文并总结
+- 直接总结用户输入的长文本
+- 基于用户输入文本回答具体问题
+- 基于文章正文回答具体问题
+- 对比两篇文章内容
+- 查询当前用户发布的文章，并支持 `top` 与 `sortBy`
+- 根据上一步文章列表结果提取文章 ID，再执行标题修改
+
+当前已形成的 DTO 接口分层：
+
+```text
+IUserReadableOutput：输出可读文本，用于最终回答上下文。
+IAgentContentOutput：输出正文内容，用于总结、问答、对比等后续步骤。
+IAgentArticleReferenceOutput：输出主文章 ID，用于后续写操作或正文获取。
+```
+
+本阶段的关键收获：
+
+```text
+Action 的 Output 不只是给用户看的结果，也可能是后续 Action 的结构化输入来源。
+所以 DTO 要同时服务“展示、传参、记忆”三个方向。
+```
+
+## 21. 当前阶段定位
 
 当前项目的 Agent 学习阶段大致处于：
 

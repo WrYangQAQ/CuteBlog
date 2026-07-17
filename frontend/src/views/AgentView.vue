@@ -34,7 +34,7 @@ import {
 } from "../api/agent";
 import { useAuthStore } from "../stores/auth";
 import { showSuccess } from "../stores/feedback";
-import { toAbsoluteAsset } from "../utils/asset";
+import { formatDateTime as formatChinaDateTime, getChinaDateParts, toAbsoluteAsset } from "../utils/asset";
 import agentAvatar from "../assets/images/agent-avator.png";
 import userAvatarFallback from "../assets/images/logo-shark.png";
 
@@ -235,12 +235,12 @@ function normalizeMessages(rows) {
   return list.length ? list : [createWelcomeMessage()];
 }
 
-function isSameDay(date, target) {
-  return (
-    date.getFullYear() === target.getFullYear() &&
-    date.getMonth() === target.getMonth() &&
-    date.getDate() === target.getDate()
-  );
+function isSameChinaDay(dateText, targetParts) {
+  const parts = getChinaDateParts(dateText);
+  return Boolean(parts && targetParts) &&
+    parts.year === targetParts.year &&
+    parts.month === targetParts.month &&
+    parts.day === targetParts.day;
 }
 
 function groupConversations(rows) {
@@ -252,19 +252,22 @@ function groupConversations(rows) {
   ];
 
   const now = new Date();
+  const todayParts = getChinaDateParts(now);
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
+  const yesterdayParts = getChinaDateParts(yesterday);
 
   rows.forEach((item) => {
-    const updated = new Date(getConversationUpdatedAt(item));
+    const updatedAt = getConversationUpdatedAt(item);
+    const updated = getChinaDateParts(updatedAt);
     const bucket =
-      Number.isNaN(updated.getTime())
+      !updated
         ? groups[3]
-        : isSameDay(updated, now)
+        : isSameChinaDay(updatedAt, todayParts)
           ? groups[0]
-          : isSameDay(updated, yesterday)
+          : isSameChinaDay(updatedAt, yesterdayParts)
             ? groups[1]
-            : now.getTime() - updated.getTime() <= 7 * 24 * 60 * 60 * 1000
+            : now.getTime() - new Date(`${updated.year}-${String(updated.month).padStart(2, "0")}-${String(updated.day).padStart(2, "0")}T00:00:00+08:00`).getTime() <= 7 * 24 * 60 * 60 * 1000
               ? groups[2]
               : groups[3];
 
@@ -533,10 +536,7 @@ function isLogRecovered(item) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString();
+  return formatChinaDateTime(value);
 }
 
 function formatDuration(ms) {

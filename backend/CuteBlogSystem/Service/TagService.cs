@@ -2,6 +2,7 @@
 using CuteBlogSystem.Repository;
 using CuteBlogSystem.DTO;
 using CuteBlogSystem.Enum;
+using CuteBlogSystem.DTO.Blog;
 
 namespace CuteBlogSystem.Service
 {
@@ -146,6 +147,19 @@ namespace CuteBlogSystem.Service
         {
             int count = await _tagRepository.GetArticleCountByTagIdAsync(tagId);
             return new ApiResponse(true, "获取标签对应的文章数量成功！", count);
+        }
+
+        // 批量获取标签文章数量
+        public async Task<ApiResponse> GetArticleCountsByTagIdsAsync(List<int> tagIds)
+        {
+            if (tagIds == null || tagIds.Count == 0)
+            {
+                return new ApiResponse(true, "没有需要统计的标签", new List<TagArticleCountDTO>());
+            }
+
+            var counts = await _tagRepository.GetArticleCountsByTagIdsAsync(tagIds.Distinct().ToList());
+
+            return new ApiResponse(true, "批量获取标签文章数量成功！", counts);
         }
     }
 }

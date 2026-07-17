@@ -1,5 +1,6 @@
 ﻿using CuteBlogSystem.Repository;
 using CuteBlogSystem.DTO;
+using CuteBlogSystem.DTO.Blog;
 
 namespace CuteBlogSystem.Service
 {
@@ -21,6 +22,7 @@ namespace CuteBlogSystem.Service
             _tagRepository = tagRepository;
         }
 
+        // 获取统计信息
         public async Task<ApiResponse> GetStatisticsAsync()
         {
             var articles = await _articleRepository.GetArticlesAsync();
