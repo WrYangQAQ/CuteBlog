@@ -152,5 +152,20 @@ namespace CuteBlogSystem.Repository
                 })
                 .ToListAsync();
         }
+
+        // 根据标签名称模糊查询标签列表
+        public async Task<List<Tag>> GetTagsByNameAsync(string tagName)
+        {
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return new List<Tag>();
+            }
+
+            tagName = tagName.Trim();
+
+            return await _dbContext.Tags
+                .Where(tag => tag.Name.Contains(tagName))
+                .ToListAsync();
+        }
     }
 }

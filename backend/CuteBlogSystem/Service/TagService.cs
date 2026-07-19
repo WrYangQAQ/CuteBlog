@@ -38,7 +38,7 @@ namespace CuteBlogSystem.Service
             }
         }
 
-        // 获取某个分类下的所有标签
+        // 根据分类ID获取某个分类下的所有标签
         public async Task<ApiResponse> GetTagsByCategoryIdAsync(int categoryId)
         {
             List<Tag> tags = await _tagRepository.GetTagsByCategoryIdAsync(categoryId);
@@ -51,7 +51,6 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(true, "标签列表获取成功", tags);
             }
         }
-
 
         // 添加标签
         public async Task<ApiResponse> AddTagAsync(GetTagDTO tag)
@@ -73,7 +72,6 @@ namespace CuteBlogSystem.Service
                 return new ApiResponse(false, "标签添加失败！");
             }
         }
-
 
         // 根据ID删除标签
         public async Task<ApiResponse> DeleteTagAsync(int tagId)
@@ -160,6 +158,51 @@ namespace CuteBlogSystem.Service
             var counts = await _tagRepository.GetArticleCountsByTagIdsAsync(tagIds.Distinct().ToList());
 
             return new ApiResponse(true, "批量获取标签文章数量成功！", counts);
+        }
+
+        // 根据标签名查询标签列表
+        public async Task<ApiResponse> GetTagsByTagName(string tagName)
+        {
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return new ApiResponse
+                {
+                    Success = false,
+                    Message = "标签名称不能为空，请输入有效的查询内容。",
+                    Code = ResponseCode.BadRequest
+                };
+            }
+
+            var tags = await _tagRepository.GetTagsByNameAsync(tagName.Trim());
+
+            if (tags.Count == 0)
+            {
+                return new ApiResponse
+                {
+                    Success = false,
+                    Message = $"未查询到名称中包含“{tagName.Trim()}”的标签。",
+                    Code = ResponseCode.NotFound
+                };
+            }
+
+            if (tags.Count == 1)
+            {
+                return new ApiResponse
+                {
+                    Success = true,
+                    Message = "已查询到符合条件的标签。",
+                    Data = tags,
+                    Code = ResponseCode.Success
+                };
+            }
+
+            return new ApiResponse
+            {
+                Success = true,
+                Message = $"共查询到 {tags.Count} 个符合条件的标签，请从中选择。",
+                Data = tags,
+                Code = ResponseCode.Success
+            };
         }
     }
 }

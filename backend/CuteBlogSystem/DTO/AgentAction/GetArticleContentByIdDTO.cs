@@ -1,4 +1,6 @@
-﻿using CuteBlogSystem.DTO.Blog;
+﻿using CuteBlogSystem.DTO.Agent;
+using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Enum;
 
 namespace CuteBlogSystem.DTO.AgentAction
 {
@@ -11,7 +13,7 @@ namespace CuteBlogSystem.DTO.AgentAction
         public int? ArticleIdFromStep { get; set; }
     }
 
-    public class GetArticleContentByIdOutput : IUserReadableOutput, IAgentContentOutput, IAgentArticleReferenceOutput
+    public class GetArticleContentByIdOutput : IUserReadableOutput, IAgentContentOutput, IAgentArticleReferenceOutput, IAgentMemoryFactProvider
     {
         // 文章 ID
         public int ArticleId { get; set; }
@@ -70,6 +72,24 @@ namespace CuteBlogSystem.DTO.AgentAction
         public int? GetPrimaryArticleId()
         {
             return ArticleId;
+        }
+
+        public IEnumerable<AgentMemoryFact> GetMemoryFacts(string sourceAction)
+        {
+            var facts = new List<AgentMemoryFact>
+            {
+                new AgentMemoryFact
+                {
+                    Type = ArticleMemoryType.ArticleSelected,
+                    ArticleId = ArticleId,
+                    ArticleTitle = Title,
+                    CategoryName = CategoryName,
+                    SourceAction = sourceAction,
+                    Summary = $"用户查看了文章《{Title}》的正文内容。"
+                }
+            };
+
+            return facts;
         }
     }
 }

@@ -1,6 +1,6 @@
 # Agent 开发阶段总结：Done
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
 ## 1. Agent 主流程
 
@@ -366,9 +366,9 @@ MemoryService 不再猜测每个 Action Output DTO 的结构。
 长期 Memory 拓宽暂缓到后续 Memory 阶段再做。
 ```
 
-## 20. 七个 Action DTO 标准化
+## 20. 十二个 Action DTO 标准化
 
-当前已经完成 7 个 Action 的 Input / Output DTO 标准化：
+当前已经完成 12 个既有 Action 的 Input / Output DTO 标准化：
 
 - `SearchArticlesByCategory`
 - `GetArticleContentById`
@@ -377,6 +377,11 @@ MemoryService 不再猜测每个 Action Output DTO 的结构。
 - `CompareContents`
 - `GetMyArticles`
 - `UpdateArticleTitle`
+- `GenerateContentRevision`
+- `UpdateArticleContent`
+- `GetAllCategories`
+- `ExplainFailureWithSuggestions`
+- `DeleteArticle`
 
 已经验证的能力：
 
@@ -388,6 +393,11 @@ MemoryService 不再猜测每个 Action Output DTO 的结构。
 - 对比两篇文章内容
 - 查询当前用户发布的文章，并支持 `top` 与 `sortBy`
 - 根据上一步文章列表结果提取文章 ID，再执行标题修改
+- 根据文章正文生成修订内容
+- 修改文章正文需要确认，并在写库前做真实结果风险校验
+- 查询全部文章分类
+- 分类不存在时生成失败解释与补救建议
+- 删除文章 Action 已 DTO 化，但仍保持 `Forbidden` 安全拒绝
 
 当前已形成的 DTO 接口分层：
 
@@ -404,7 +414,60 @@ Action 的 Output 不只是给用户看的结果，也可能是后续 Action 的
 所以 DTO 要同时服务“展示、传参、记忆”三个方向。
 ```
 
-## 21. 当前阶段定位
+## 21. Action DTO 标准化收尾验证
+
+已经完成最后一批 Action 的 DTO 化与测试：
+
+- `GenerateContentRevision` 支持直接文本润色与基于前置正文生成修订内容
+- `UpdateArticleContent` 使用结构化 Input / Output，并保留确认机制
+- `GetAllCategories` 使用结构化 Output 返回分类列表
+- `ExplainFailureWithSuggestions` 使用结构化 Output 返回失败解释和建议
+- `DeleteArticle` 使用结构化 Input / Output，但风险等级仍为 `Forbidden`
+
+已经验证：
+
+- 用户直接贴长文本并要求总结 / 问答 / 润色时，不再误用旧文章内容
+- 用户要求“把文章润色得更适合初学者阅读”时，能走获取正文、生成修订、确认写库流程
+- 用户查询不存在分类时，能说明分类不存在，并列出可选分类
+- 用户要求删除文章时，会被安全边界拒绝，不进入确认，不执行删除
+
+当前 12 个 Action 的 DTO 标准化已经闭环：
+
+```text
+Action Input DTO -> Executor 强类型解析 -> Action Output DTO
+-> FinalAnswer / Memory / 后续步骤复用
+```
+
+## 22. 既有 Action MemoryFacts 收尾
+
+已经完成 12 个既有 Action 的第一阶段记忆事实设计与补齐：
+
+- 列表型查询只记录 `ArticleMentioned`
+- 列表只有 1 篇时才额外写入 `ArticleSelected`
+- 单篇文章读取写入 `ArticleSelected`
+- 文章标题 / 正文修改写入 `ArticleUpdated` 与 `ArticleSelected`
+- 文章总结写入 `ArticleSummarized`
+- 文章问答写入 `ArticleAnswered`
+- 文章对比只记录被对比文章为 `ArticleMentioned`
+- 直接粘贴文本总结 / 问答 / 润色不污染 `LastSelectedArticleId`
+- `GetAllCategories`、`ExplainFailureWithSuggestions`、`DeleteArticle` 不产生文章记忆事实
+
+已经验证：
+
+- 查看 ID 为 9 的文章内容后，`LastSelectedArticleId` 正常更新
+- “这篇文章讲了什么？” 能正确指代上一轮选中文章
+- “刚才那篇文章现在标题是什么？” 能正确读取当前文章标题
+- 对用户直接粘贴的文本进行润色，不会把上一轮文章错误选中
+- 对比两篇文章时，不会把对比结果误当成新的唯一选中文章
+
+本阶段形成的规则：
+
+```text
+Action Output 负责声明“我产生了哪些可记忆事实”。
+MemoryService 只消费 MemoryFacts，不再猜每个 DTO 的内部结构。
+```
+
+## 23. 当前阶段定位
 
 当前项目的 Agent 学习阶段大致处于：
 

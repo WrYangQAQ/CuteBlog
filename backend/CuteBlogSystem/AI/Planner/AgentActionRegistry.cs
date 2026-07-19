@@ -41,6 +41,9 @@ namespace CuteBlogSystem.AI.Planner
         // 解释失败并提供建议（用于补救计划）
         public const string ExplainFailureWithSuggestions = nameof(ExplainFailureWithSuggestions);
 
+        // 根据用户输入从文章列表中选择相应文章
+        public const string SelectArticleFromList = nameof(SelectArticleFromList);
+
         // 所有允许执行的动作（主流程 + 补救流程）
         public static readonly HashSet<string> AllowedActions = new()
         {
@@ -55,7 +58,8 @@ namespace CuteBlogSystem.AI.Planner
             UpdateArticleTitle,
             GenerateContentRevision,
             UpdateArticleContent,
-            DeleteArticle
+            DeleteArticle,
+            SelectArticleFromList
         };
 
         // 仅补救计划允许执行的动作集合
@@ -101,7 +105,9 @@ namespace CuteBlogSystem.AI.Planner
 
             [GetAllCategories] =  AgentActionRiskLevel.ReadOnly,
 
-            [ExplainFailureWithSuggestions] = AgentActionRiskLevel.ReadOnly
+            [ExplainFailureWithSuggestions] = AgentActionRiskLevel.ReadOnly,
+
+            [SelectArticleFromList] = AgentActionRiskLevel.ReadOnly
         };
 
         // 依据风险映射字典对行为风险等级进行查询

@@ -53,7 +53,8 @@ namespace CuteBlogSystem.Service
             string userMessage,
             string answer,
             int? selectedArticleId,
-            string? selectedArticleTitle)
+            string? selectedArticleTitle,
+            List<RecentMentionedArticleItem>? mentionedArticles)
         {
             // 确保存在该会话的记忆记录
             var memory = await GetOrCreateAsync(conversationId, userMessage);
@@ -61,6 +62,16 @@ namespace CuteBlogSystem.Service
             // 更新记忆字段
             memory.LastUserMessage = userMessage;
             memory.LastAnswer = answer;
+
+            // 只有真正有文章列表传入时才更新记忆里的文章列表
+            if (mentionedArticles != null && mentionedArticles.Count > 1)
+            {
+                memory.RecentMentionedArticlesJson = JsonSerializer.Serialize(mentionedArticles,
+                new JsonSerializerOptions
+                {
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+            }
 
             // 如果该轮进行搜索并搜索到了新文章才对记忆里存储的之前文章的id和title进行更新
             if (selectedArticleId.HasValue)
@@ -76,7 +87,7 @@ namespace CuteBlogSystem.Service
         }
 
         // 在工作流完成后更新对话记忆：提取执行结果中用户可能选中的文章，并保存最近交互信息
-        public async Task<bool> UpdateAfterWorkflowAsync(
+        public async Task<bool> UpdateConversationMemoryAfterWorkflowAsync(
             string conversationId,           // 会话标识符
             string userMessage,              // 用户发送的消息
             string answer,                   // Agent 返回的最终答案
@@ -85,13 +96,17 @@ namespace CuteBlogSystem.Service
             // 从执行结果中尝试提取用户选中的文章信息（文章ID和标题）
             var selectedArticle = ExtractSelectedArticle(executionResult);
 
+            // 从执行结果中尝试提取Agent查询出的文章
+            var mentionedArticles = ExtractRecentMentionedArticles(executionResult);
+
             // 调用底层更新方法，保存用户消息、答案以及选中的文章信息
             return await UpdateAfterResponseAsync(
                 conversationId,
                 userMessage,
                 answer,
                 selectedArticle.ArticleId,
-                selectedArticle.Title);
+                selectedArticle.Title,
+                mentionedArticles);
         }
 
         // 构建带记忆增强的用户消息：如果存在有效的对话记忆，则添加上下文信息帮助 AI 理解指代
@@ -121,6 +136,17 @@ namespace CuteBlogSystem.Service
                 sections.Add($"""
                     较早对话摘要：
                     {memory.ConversationSummary}
+                    """);
+            }
+
+            if (!string.IsNullOrWhiteSpace(memory.RecentMentionedArticlesJson))
+            {
+                sections.Add($"""
+                    最近一次文章候选列表：
+                    {memory.RecentMentionedArticlesJson}
+
+                    如果用户说“第一篇、第三篇、最后一篇、Redis 那篇”等，
+                    可以使用 SelectArticleFromList 从候选列表中选择具体文章。
                     """);
             }
 
@@ -276,6 +302,7 @@ namespace CuteBlogSystem.Service
 
             memory.LastSelectedArticleId = null;
             memory.LastSelectedArticleTitle = null;
+            memory.RecentMentionedArticlesJson = null;
 
             memory.ConversationSummary = null;
             memory.LastSummarizedMessageId = null;
@@ -317,62 +344,6 @@ namespace CuteBlogSystem.Service
                 ArticleId = fact.ArticleId,
                 Title = fact.ArticleTitle
             };
-        }
-
-        // 从执行步骤的 Data 对象中提取文章信息（ID 和标题），支持多种 JSON 结构
-        private static SelectedArticleMemory ExtractArticleFromData(object data)
-        {
-            // 将任意对象序列化为 JSON 字符串，以便统一解析
-            var json = JsonSerializer.Serialize(data);
-
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            // 如果根节点是数组且非空，取第一个元素作为文章对象
-            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-            {
-                return ExtractArticleIdAndTitleFromJsonElement(root[0]);
-            }
-
-            // 处理根节点为对象的情况
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                // 尝试获取常见的包装属性 "data"
-                if (root.TryGetProperty("data", out var dataProperty))
-                {
-                    // 如果 data 属性是数组且非空，取第一个元素
-                    if (dataProperty.ValueKind == JsonValueKind.Array && dataProperty.GetArrayLength() > 0)
-                    {
-                        return ExtractArticleIdAndTitleFromJsonElement(dataProperty[0]);
-                    }
-
-                    // 如果 data 属性是对象，直接使用
-                    if (dataProperty.ValueKind == JsonValueKind.Object)
-                    {
-                        if (root.TryGetProperty("Articles", out var articlesProperty) &&
-                            articlesProperty.ValueKind == JsonValueKind.Array &&
-                            articlesProperty.GetArrayLength() > 0)
-                        {
-                            return ExtractArticleIdAndTitleFromJsonElement(articlesProperty[0]);
-                        }
-
-                        if (root.TryGetProperty("articles", out var lowerArticlesProperty) &&
-                            lowerArticlesProperty.ValueKind == JsonValueKind.Array &&
-                            lowerArticlesProperty.GetArrayLength() > 0)
-                        {
-                            return ExtractArticleIdAndTitleFromJsonElement(lowerArticlesProperty[0]);
-                        }
-
-                        return ExtractArticleIdAndTitleFromJsonElement(dataProperty);
-                    }
-                }
-
-                // 没有 "data" 包装，直接使用根对象
-                return ExtractArticleIdAndTitleFromJsonElement(root);
-            }
-
-            // 无法识别的结构，返回空记忆
-            return new SelectedArticleMemory();
         }
 
         // 从 JSON 元素中提取文章信息（ID 和标题），尝试多种常见的属性名
@@ -478,6 +449,36 @@ namespace CuteBlogSystem.Service
             }
 
             return Math.Max(lastSummarizedMessageId.Value, contextResetMessageId.Value);
+        }
+
+        // 从执行结果中提取所有被提及的文章，按出现顺序生成列表（用于记忆上下文）
+        private static List<RecentMentionedArticleItem> ExtractRecentMentionedArticles(
+            AgentPlanExecutionResult? executionResult)
+        {
+            // 执行结果为空则返回空列表
+            if (executionResult == null)
+            {
+                return new List<RecentMentionedArticleItem>();
+            }
+
+            // 从所有成功步骤中提取类型为 ArticleMentioned 且有文章 ID 的记忆事实
+            var mentionedFacts = executionResult.StepResults
+                .Where(s => s.Success && s.MemoryFacts != null)
+                .SelectMany(s => s.MemoryFacts)
+                .Where(f => f.Type == ArticleMemoryType.ArticleMentioned && f.ArticleId.HasValue)
+                .ToList();
+
+            // 将记忆事实转换为列表项，按索引顺序排列
+            return mentionedFacts
+                .Select((fact, index) => new RecentMentionedArticleItem
+                {
+                    Index = index + 1,
+                    ArticleId = fact.ArticleId!.Value,
+                    Title = fact.ArticleTitle ?? string.Empty,
+                    CategoryName = fact.CategoryName ?? string.Empty,
+                    SourceAction = fact.SourceAction ?? string.Empty
+                })
+                .ToList();
         }
     }
 }

@@ -1,4 +1,6 @@
-﻿using CuteBlogSystem.DTO.Blog;
+﻿using CuteBlogSystem.DTO.Agent;
+using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Enum;
 
 namespace CuteBlogSystem.DTO.AgentAction
 {
@@ -14,7 +16,7 @@ namespace CuteBlogSystem.DTO.AgentAction
         public string NewTitle { get; set; } = string.Empty;
     }
 
-    public class UpdateArticleTitleOutput : IUserReadableOutput, IAgentArticleReferenceOutput
+    public class UpdateArticleTitleOutput : IUserReadableOutput, IAgentArticleReferenceOutput, IAgentMemoryFactProvider
     {
         // 被修改的文章 ID
         public int ArticleId { get; set; }
@@ -38,6 +40,31 @@ namespace CuteBlogSystem.DTO.AgentAction
         public int? GetPrimaryArticleId()
         {
             return ArticleId;
+        }
+
+        public IEnumerable<AgentMemoryFact> GetMemoryFacts(string sourceAction)
+        {
+            var facts = new List<AgentMemoryFact>
+            {
+                new AgentMemoryFact
+                {
+                    Type = ArticleMemoryType.ArticleUpdated,
+                    ArticleId = ArticleId,
+                    ArticleTitle = NewTitle,
+                    SourceAction = sourceAction,
+                    Summary = $"用户将文章标题从《{OldTitle}》修改为《{NewTitle}》。"
+                },
+                new AgentMemoryFact
+                {
+                    Type = ArticleMemoryType.ArticleSelected,
+                    ArticleId = ArticleId,
+                    ArticleTitle = NewTitle,
+                    SourceAction = sourceAction,
+                    Summary = $"当前选中的文章更新为《{NewTitle}》。"
+                }
+            };
+
+            return facts;
         }
 
         public UpdateArticleTitleOutput(UpdateArticleTitleDTO dto)

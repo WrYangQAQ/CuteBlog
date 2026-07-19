@@ -1,4 +1,6 @@
-﻿using CuteBlogSystem.DTO.Blog;
+﻿using CuteBlogSystem.DTO.Agent;
+using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Enum;
 
 namespace CuteBlogSystem.DTO.AgentAction
 {
@@ -17,7 +19,7 @@ namespace CuteBlogSystem.DTO.AgentAction
         public int NewContentFromStep { get; set; }
     }
 
-    public class UpdateArticleContentOutput : IUserReadableOutput, IAgentArticleReferenceOutput
+    public class UpdateArticleContentOutput : IUserReadableOutput, IAgentArticleReferenceOutput, IAgentMemoryFactProvider
     {
         // 被更新内容的文章 ID
         public int ArticleId { get; set; }
@@ -54,6 +56,31 @@ namespace CuteBlogSystem.DTO.AgentAction
         public int? GetPrimaryArticleId()
         {
             return ArticleId;
+        }
+
+        public IEnumerable<AgentMemoryFact> GetMemoryFacts(string sourceAction)
+        {
+            var facts = new List<AgentMemoryFact>
+            {
+                new AgentMemoryFact
+                {
+                    Type = ArticleMemoryType.ArticleUpdated,
+                    ArticleId = ArticleId,
+                    ArticleTitle = Title,
+                    SourceAction = sourceAction,
+                    Summary = $"用户更新了文章《{Title}》的正文内容，长度从 {OldLength} 字符变为 {NewLength} 字符。"
+                },
+                new AgentMemoryFact
+                {
+                    Type = ArticleMemoryType.ArticleSelected,
+                    ArticleId = ArticleId,
+                    ArticleTitle = Title,
+                    SourceAction = sourceAction,
+                    Summary = $"当前选中的文章为刚刚更新正文的《{Title}》。"
+                }
+            };
+
+            return facts;
         }
     }
 }

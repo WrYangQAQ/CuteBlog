@@ -142,6 +142,8 @@ namespace CuteBlogSystem.Config
                     .OnDelete(DeleteBehavior.Cascade); // 配置级联删除，当会话被删除时，相关的记忆记录也被删除
 
                 entity.Property(m => m.ConversationSummary).HasMaxLength(4000);
+
+                entity.Property(m => m.RecentMentionedArticlesJson).HasMaxLength(4000);
             });
 
             // 配置 AgentConversation 的 SessionId 作为主键，并添加必要的属性配置

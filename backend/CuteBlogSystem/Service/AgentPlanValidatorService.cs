@@ -144,6 +144,10 @@ namespace CuteBlogSystem.Service
                 case AgentActionRegistry.DeleteArticle:
                     ValidateDeleteArticleParameters(step, errors);
                     break;
+
+                case AgentActionRegistry.SelectArticleFromList:
+                    ValidateSelectArticleFromListParameters(step, errors);
+                    break;
             }
         }
 
@@ -231,6 +235,13 @@ namespace CuteBlogSystem.Service
                     if (GetIntParameter(step, "articleIdFromStep") > 0)
                     {
                         ValidateReferenceToPreviousStep(step, plan, "articleIdFromStep", errors);
+                    }
+                    break;
+
+                case AgentActionRegistry.SelectArticleFromList:
+                    if (GetIntParameter(step, "listFromStep") > 0)
+                    {
+                        ValidateSelectArticleFromListStepReference(step, plan, errors);
                     }
                     break;
             }
@@ -645,6 +656,93 @@ namespace CuteBlogSystem.Service
             {
                 errors.Add($"Step {step.StepNumber} 缺少 question 参数。");
             }
+        }
+
+        // 验证 SelectArticleFromList 动作参数：
+        // listFromStep 不能为负，matchType 必须有效且不能是 NotFound，
+        // ByIndex 时 index >0 且无 selection，
+        // ByTitle 时 selection 非空且无 index
+        private static void ValidateSelectArticleFromListParameters(AgentPlanStep step, List<string> errors)
+        {
+            var listFromStep = GetIntParameter(step, "listFromStep");
+
+            // listFromStep 小于 0 时非法，0 表示使用会话记忆
+            if (listFromStep < 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 SelectArticleFromList.listFromStep 不能小于 0。0 表示使用会话记忆中的最近文章列表。");
+            }
+
+            var matchTypeText = GetStringParameter(step, "matchType");
+
+            // matchType 必须存在
+            if (string.IsNullOrWhiteSpace(matchTypeText))
+            {
+                errors.Add($"Step {step.StepNumber} 的 SelectArticleFromList 缺少 matchType。");
+                return;
+            }
+
+            // matchType 必须是有效的枚举值
+            if (!System.Enum.TryParse<ArticleSelectionMatchMode>(matchTypeText, ignoreCase: true, out var matchType))
+            {
+                errors.Add($"Step {step.StepNumber} 的 SelectArticleFromList.matchType 不合法：{matchTypeText}。");
+                return;
+            }
+
+            // matchType 不能是 NotFound（该值仅用于运行时输出）
+            if (matchType == ArticleSelectionMatchMode.NotFound)
+            {
+                errors.Add($"Step {step.StepNumber} 的 SelectArticleFromList.matchType 不能由 Planner 直接设置为 NotFound。");
+                return;
+            }
+
+            var index = GetIntParameter(step, "index");
+            var selection = GetStringParameter(step, "selection");
+
+            // ByIndex 模式：必须提供有效的 index，且不能同时提供 selection
+            if (matchType == ArticleSelectionMatchMode.ByIndex)
+            {
+                if (index <= 0)
+                {
+                    errors.Add($"Step {step.StepNumber} 使用 ByIndex 时，index 必须大于 0。");
+                }
+
+                if (!string.IsNullOrWhiteSpace(selection))
+                {
+                    errors.Add($"Step {step.StepNumber} 使用 ByIndex 时，不应再提供 selection。");
+                }
+            }
+
+            // ByTitle 模式：必须提供非空的 selection，且不能同时提供 index
+            if (matchType == ArticleSelectionMatchMode.ByTitle)
+            {
+                if (string.IsNullOrWhiteSpace(selection))
+                {
+                    errors.Add($"Step {step.StepNumber} 使用 ByTitle 时，selection 不能为空。");
+                }
+
+                if (index > 0)
+                {
+                    errors.Add($"Step {step.StepNumber} 使用 ByTitle 时，不应再提供 index。");
+                }
+            }
+        }
+
+        // 验证 SelectArticleFromList 动作中对前置步骤的引用：listFromStep 为 0 时表示使用会话记忆，无需校验；否则校验引用是否有效
+        private static void ValidateSelectArticleFromListStepReference(
+            AgentPlanStep step,
+            AgentPlan plan,
+            List<string> errors)
+        {
+            var listFromStep = GetIntParameter(step, "listFromStep");
+
+            // listFromStep 为 0 表示使用会话记忆中的文章列表，不依赖于计划中的步骤
+            if (listFromStep == 0)
+            {
+                return;
+            }
+
+            // 调用通用引用校验：检查引用的步骤是否存在且位于当前步骤之前
+            ValidateReferenceToPreviousStep(step, plan, "listFromStep", errors);
         }
     }
 }

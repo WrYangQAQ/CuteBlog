@@ -5,8 +5,10 @@ using CuteBlogSystem.DTO.Agent;
 using CuteBlogSystem.DTO.AgentAction;
 using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Enum;
+using CuteBlogSystem.Repository;
 using CuteBlogSystem.Util;
 using Microsoft.Extensions.AI;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -23,6 +25,7 @@ namespace CuteBlogSystem.Service
         private readonly ILogger<AgentPlanExecutorService> _logger;
         private readonly AIShieldService _aiShieldService;
         private readonly AgentParameterRiskService _paramRiskService;
+        private readonly AgentConversationMemoryRepository _memoryRepository;
 
         public AgentPlanExecutorService(
             ArticleService articleService,
@@ -31,7 +34,8 @@ namespace CuteBlogSystem.Service
             IChatClient chatClient,
             ILogger<AgentPlanExecutorService> logger,
             AIShieldService aiShieldService,
-            AgentParameterRiskService paramRiskService)
+            AgentParameterRiskService paramRiskService,
+            AgentConversationMemoryRepository memoryRepository)
         {
             _articleService = articleService;
             _categoryService = categoryService;
@@ -40,10 +44,11 @@ namespace CuteBlogSystem.Service
             _logger = logger;
             _aiShieldService = aiShieldService;
             _paramRiskService = paramRiskService;
+            _memoryRepository = memoryRepository;
         }
 
         // 执行传入的计划，依次处理每个步骤，遇失败则提前返回(计划无补救，直接返回失败结果)
-        public async Task<AgentPlanExecutionResult> ExecuteAsync(AgentPlan plan, int userId)
+        public async Task<AgentPlanExecutionResult> ExecuteAsync(AgentPlan plan, int userId, string sessionId)
         {
             if (plan == null)
             {
@@ -123,6 +128,10 @@ namespace CuteBlogSystem.Service
 
                     case AgentActionRegistry.AnswerQuestionFromContent:
                         stepResult = await ExecuteAnswerQuestionFromContentAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.SelectArticleFromList:
+                        stepResult = await ExecuteSelectArticleFromListAsync(step, executionResult.StepResults, sessionId);
                         break;
 
                     default:
@@ -309,52 +318,7 @@ namespace CuteBlogSystem.Service
                     TotalCount = totalCount
                 };
 
-                string sortByText = "按时间排序";
-                switch (input.SortBy)
-                {
-                    case ArticleSortBy.Latest:
-                        sortByText = "按时间排序";
-                        break;
-
-                    case ArticleSortBy.MostLiked:
-                        sortByText = "按点赞量排序";
-                        break;
-
-                    case ArticleSortBy.MostViewed:
-                        sortByText = "按浏览量排序";
-                        break;
-                }
-
-                var memoryFacts = output.Articles
-                    .Select((article, index) => new AgentMemoryFact
-                    {
-                        Type = ArticleMemoryType.ArticleQueried,
-                        ArticleId = article.Id,
-                        ArticleTitle = article.Title,
-                        CategoryName = article.CategoryName,
-                        SourceAction = AgentActionRegistry.SearchArticlesByCategory,
-                        Summary =
-                            $"用户查询了 {output.CategoryName} 分类下的文章，" +
-                            $"该分类一共有 {totalCount} 篇文章，" +
-                            $"系统根据 {sortByText} 向用户展示了 {output.Articles.Count} 篇。 " +
-                            $"这是展示结果中的第 {index + 1} 篇：《{article.Title}》。"
-                    })
-                    .ToList();
-
-                var selectedArticle = output.Articles.FirstOrDefault();
-
-                if (selectedArticle != null)
-                {
-                    memoryFacts.Add(new AgentMemoryFact
-                    {
-                        Type = ArticleMemoryType.ArticleSelected,
-                        ArticleId = selectedArticle.Id,
-                        ArticleTitle = selectedArticle.Title,
-                        CategoryName = selectedArticle.CategoryName,
-                        SourceAction = AgentActionRegistry.SearchArticlesByCategory,
-                        Summary = $"当前默认选中文章为《{selectedArticle.Title}》，后续“它、这篇文章、那篇文章”优先指向这篇文章。"
-                    });
-                }
+                var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.SearchArticlesByCategory).ToList();
 
                 return new AgentStepExecutionResult
                 {
@@ -450,6 +414,7 @@ namespace CuteBlogSystem.Service
             }
 
             var output = new GetArticleContentByIdOutput(articleId, article);
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.GetArticleContentById).ToList();
 
             return new AgentStepExecutionResult
             {
@@ -458,18 +423,7 @@ namespace CuteBlogSystem.Service
                 Success = true,
                 Message = "文章正文获取成功",
                 Data = output,
-                MemoryFacts = new List<AgentMemoryFact>
-                {
-                    new AgentMemoryFact
-                    {
-                        Type = ArticleMemoryType.ArticleMentioned,
-                        ArticleId = output.ArticleId,
-                        ArticleTitle = output.Title,
-                        CategoryName = output.CategoryName,
-                        SourceAction = AgentActionRegistry.GetArticleContentById,
-                        Summary = $"用户查看了文章《{output.Title}》的正文内容。"
-                    }
-                }
+                MemoryFacts = memoryFacts
             };
         }
 
@@ -478,24 +432,20 @@ namespace CuteBlogSystem.Service
             AgentPlanStep step,
             List<AgentStepExecutionResult> previousResults)
         {
-            // 尝试从参数中直接获取正文内容
-            var directContent = GetStringParam(step.Parameters, "content", string.Empty);
-
-            // 获取引用前置步骤的编号
-            var fromStepNumber = GetIntParam(step.Parameters, "contentFromStep");
-
-            string contentText;
-
-            // 优先使用直接传入的内容
-            if (!string.IsNullOrWhiteSpace(directContent))
+            // 构造输入对象，统一使用 input 保存动作参数
+            var input = new SummarizeContentInput
             {
-                contentText = directContent;
-            }
-            else
+                Content = GetStringParam(step.Parameters, "content", string.Empty),
+                ContentFromStep = GetIntParam(step.Parameters, "contentFromStep")
+            };
+
+            AgentMemoryFact? sourceArticleFact = null;
+
+            // 未直接提供正文时，从前置步骤中获取正文
+            if (string.IsNullOrWhiteSpace(input.Content))
             {
-                // 否则从前置步骤中查找对应结果
                 var previousResult = previousResults
-                    .FirstOrDefault(result => result.StepNumber == fromStepNumber);
+                    .FirstOrDefault(result => result.StepNumber == input.ContentFromStep);
 
                 // 如果找不到对应的步骤结果，返回失败
                 if (previousResult == null || previousResult.Data == null)
@@ -505,20 +455,32 @@ namespace CuteBlogSystem.Service
                         StepNumber = step.StepNumber,
                         Action = step.Action,
                         Success = false,
-                        Message = $"找不到第 {fromStepNumber} 步的正文结果"
+                        Message = $"找不到第 {input.ContentFromStep} 步的正文结果"
                     };
                 }
+                else
+                {
+                    // 从上游执行结果获取记忆事实
+                    if (previousResult.MemoryFacts != null)
+                    {
+                        sourceArticleFact = previousResult.MemoryFacts
+                            .LastOrDefault(f =>
+                                f.ArticleId.HasValue &&
+                                !string.IsNullOrWhiteSpace(f.ArticleTitle) &&
+                                (f.Type == ArticleMemoryType.ArticleSelected ||
+                                 f.Type == ArticleMemoryType.ArticleUpdated ||
+                                 f.Type == ArticleMemoryType.ArticleMentioned));
+                    }
 
-                // 从前置步骤的数据中提取文本内容
-                contentText = ExtractContentText(previousResult.Data);
+                    // 从前置步骤的数据中提取文本内容
+                    input.Content = ExtractContentText(previousResult.Data);
+                }
             }
 
-            // 构造输入对象
-            var input = new SummarizeContentInput
-            {
-                Content = contentText,
-                ContentFromStep = fromStepNumber > 0 ? fromStepNumber : null
-            };
+            // 未指定有效前置步骤编号时，将其统一设置为 null
+            input.ContentFromStep = input.ContentFromStep > 0
+                ? input.ContentFromStep
+                : null;
 
             // 构造 AI 对话消息
             var messages = new List<ChatMessage>
@@ -560,19 +522,14 @@ namespace CuteBlogSystem.Service
             {
                 Summary = summary,
                 SummaryLength = summary.Length,
-                OriginalContentLength = input.Content.Length
+                OriginalContentLength = input.Content.Length,
+                SourceArticleId = sourceArticleFact?.ArticleId,
+                SourceArticleTitle = sourceArticleFact?.ArticleTitle,
+                SourceCategoryName = sourceArticleFact?.CategoryName
             };
 
-            // 构造记忆事实，记录本次总结操作，便于后续上下文理解
-            var memoryFacts = new List<AgentMemoryFact>
-            {
-                new AgentMemoryFact
-                {
-                    Type = ArticleMemoryType.ArticleSummarized,
-                    Summary = output.Summary,
-                    SourceAction = AgentActionRegistry.SummarizeContent
-                }
-            };
+            // 构造当前Action的记忆事实
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.SummarizeContent).ToList();
 
             return new AgentStepExecutionResult
             {
@@ -581,7 +538,7 @@ namespace CuteBlogSystem.Service
                 Success = true,
                 Message = "文章总结成功",
                 Data = output, // 将输出对象存入 Data，包含摘要和长度信息
-                MemoryFacts = memoryFacts // 附带记忆事实
+                MemoryFacts = memoryFacts
             };
         }
 
@@ -590,19 +547,20 @@ namespace CuteBlogSystem.Service
             AgentPlanStep step,
             List<AgentStepExecutionResult> previousResults)
         {
-            // 获取两篇文章正文的来源步骤编号
-            var contentFromStepA = GetIntParam(step.Parameters, "contentFromStepA");
-            var contentFromStepB = GetIntParam(step.Parameters, "contentFromStepB");
+            // 构造输入对象，统一保存动作参数
+            var input = new CompareContentsInput
+            {
+                ContentFromStepA = GetIntParam(step.Parameters, "contentFromStepA"),
+                ContentFromStepB = GetIntParam(step.Parameters, "contentFromStepB"),
+                CompareFocus = GetStringParam(
+                    step.Parameters,
+                    "compareFocus",
+                    string.Empty)
+            };
 
-            // 获取可选的比较重点方向
-            var compareFocus = GetStringParam(step.Parameters, "compareFocus", string.Empty);
-
-            // 从之前步骤结果中查找对应的正文数据
-            var resultA = previousResults
-                .FirstOrDefault(r => r.StepNumber == contentFromStepA);
-
-            var resultB = previousResults
-                .FirstOrDefault(r => r.StepNumber == contentFromStepB);
+            // 从之前步骤结果中查找第一篇文章的正文数据
+            var resultA = previousResults.FirstOrDefault(
+                result => result.StepNumber == input.ContentFromStepA);
 
             // 若第一篇文章正文缺失，返回失败
             if (resultA == null || resultA.Data == null)
@@ -612,9 +570,13 @@ namespace CuteBlogSystem.Service
                     StepNumber = step.StepNumber,
                     Action = step.Action,
                     Success = false,
-                    Message = $"找不到第 {contentFromStepA} 步的正文内容"
+                    Message = $"找不到第 {input.ContentFromStepA} 步的正文内容"
                 };
             }
+
+            // 从之前步骤结果中查找第二篇文章的正文数据
+            var resultB = previousResults.FirstOrDefault(
+                result => result.StepNumber == input.ContentFromStepB);
 
             // 若第二篇文章正文缺失，返回失败
             if (resultB == null || resultB.Data == null)
@@ -624,23 +586,22 @@ namespace CuteBlogSystem.Service
                     StepNumber = step.StepNumber,
                     Action = step.Action,
                     Success = false,
-                    Message = $"找不到第 {contentFromStepB} 步的正文内容"
+                    Message = $"找不到第 {input.ContentFromStepB} 步的正文内容"
                 };
             }
 
-            // 从步骤数据中提取纯文本内容
-            var contentA = ExtractContentText(resultA.Data);
-            var contentB = ExtractContentText(resultB.Data);
+            // 从上游执行结果中获取记忆事实
+            var sourceArticleFactA = ExtractArticleFactFromStepResult(resultA);
+            var sourceArticleFactB = ExtractArticleFactFromStepResult(resultB);
 
-            // 构造输入对象
-            var input = new CompareContentsInput
-            {
-                ContentFromStepA = contentFromStepA,
-                ContentFromStepB = contentFromStepB,
-                CompareFocus = string.IsNullOrWhiteSpace(compareFocus) ? null : compareFocus,
-                ContentA = contentA,
-                ContentB = contentB
-            };
+            // 从步骤数据中提取纯文本内容
+            input.ContentA = ExtractContentText(resultA.Data);
+            input.ContentB = ExtractContentText(resultB.Data);
+
+            // 未指定比较重点时统一设置为 null
+            input.CompareFocus = string.IsNullOrWhiteSpace(input.CompareFocus)
+                ? null
+                : input.CompareFocus;
 
             // 根据是否指定比较重点，生成 AI 提示中的聚焦方向文本
             string focusText = string.IsNullOrWhiteSpace(input.CompareFocus)
@@ -671,18 +632,18 @@ namespace CuteBlogSystem.Service
                 $"""
                 第一篇文章内容如下：
 
-                {contentA}
+                {input.ContentA}
 
                 第二篇文章内容如下：
 
-                {contentB}
+                {input.ContentB}
                 """)
             };
 
             _logger.LogInformation(
                 "执行 CompareContents，正文来源步骤：{StepA} 和 {StepB}",
-                contentFromStepA,
-                contentFromStepB);
+                input.ContentFromStepA,
+                input.ContentFromStepB);
 
             // 调用 AI 生成对比结果，限制输出 Token 数
             var response = await _chatClient.GetResponseAsync
@@ -707,8 +668,19 @@ namespace CuteBlogSystem.Service
                 ContentALength = input.ContentA.Length,
                 ContentBLength = input.ContentB.Length,
                 ComparisonLength = compareResult.Length,
-                CompareFocus = input.CompareFocus
+                CompareFocus = input.CompareFocus,
+
+                ArticleAId = sourceArticleFactA?.ArticleId,
+                ArticleATitle = sourceArticleFactA?.ArticleTitle,
+                ArticleACategoryName = sourceArticleFactA?.CategoryName,
+
+                ArticleBId = sourceArticleFactB?.ArticleId,
+                ArticleBTitle = sourceArticleFactB?.ArticleTitle,
+                ArticleBCategoryName = sourceArticleFactB?.CategoryName
             };
+
+            // 获取Action执行的记忆事实
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.CompareContents).ToList();
 
             // 返回成功结果，Data 为输出对象
             return new AgentStepExecutionResult
@@ -717,7 +689,8 @@ namespace CuteBlogSystem.Service
                 Action = step.Action,
                 Success = true,
                 Message = "文章对比分析成功",
-                Data = output
+                Data = output,
+                MemoryFacts = memoryFacts
             };
         }
 
@@ -814,13 +787,16 @@ namespace CuteBlogSystem.Service
                 TotalCount = articles.Count
             };
 
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.GetMyArticles).ToList();
+
             return new AgentStepExecutionResult
             {
                 StepNumber = step.StepNumber,
                 Action = step.Action,
                 Success = true,
                 Message = "获取用户文章列表成功",
-                Data = output
+                Data = output,
+                MemoryFacts = memoryFacts
             };
         }
 
@@ -873,13 +849,15 @@ namespace CuteBlogSystem.Service
             if (response.Data is UpdateArticleTitleDTO dto)
             {
                 var output = new UpdateArticleTitleOutput(dto);
+                var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.UpdateArticleTitle).ToList();
                 return new AgentStepExecutionResult
                 {
                     StepNumber = step.StepNumber,
                     Action = step.Action,
                     Success = true,
                     Message = response.Message,
-                    Data = output
+                    Data = output,
+                    MemoryFacts = memoryFacts
                 };
             }
 
@@ -906,31 +884,25 @@ namespace CuteBlogSystem.Service
                 Instruction = GetStringParam(step.Parameters, "instruction", "请优化文章表达，使其更清晰、流畅。")
             };
 
+            AgentMemoryFact? sourceArticleFact = null;
+
             // 优先从参数中直接获取原文内容
             if (string.IsNullOrWhiteSpace(input.OriginalContent))
             {
                 // 若没有直接提供，则尝试从指定的上一步结果中提取
-                var fromStep = GetIntParam(step.Parameters, "contentFromStep");
-                if (fromStep > 0)
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.ContentFromStep);
+                if (previousResult == null || previousResult.Data == null)
                 {
-                    var prev = previousResults.FirstOrDefault(r => r.StepNumber == fromStep);
-                    if (prev?.Data != null)
+                    return new AgentStepExecutionResult
                     {
-                        input.OriginalContent = ExtractContentText(prev.Data);
-                    }   
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = "无法获取待修改的原文内容"
+                    };
                 }
-            }
-
-            // 若仍无法获取原文，则返回失败
-            if (string.IsNullOrWhiteSpace(input.OriginalContent))
-            {
-                return new AgentStepExecutionResult
-                {
-                    StepNumber = step.StepNumber,
-                    Action = step.Action,
-                    Success = false,
-                    Message = "无法获取待修改的原文内容"
-                };
+                input.OriginalContent = ExtractContentText(previousResult.Data);
+                sourceArticleFact = ExtractArticleFactFromStepResult(previousResult);
             }
 
             // 检测修改指令是否具有风险
@@ -998,8 +970,14 @@ namespace CuteBlogSystem.Service
                 Instruction = input.Instruction,
                 OriginalContentLength = input.OriginalContent.Length,
                 RevisedContent = revised,
-                RevisedContentLength = revised.Length
+                RevisedContentLength = revised.Length,
+                SourceArticleId = sourceArticleFact?.ArticleId,
+                SourceArticleTitle = sourceArticleFact?.ArticleTitle,
+                SourceCategoryName = sourceArticleFact?.CategoryName
             };
+
+            // 根据当前执行输出构造记忆事实
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.GenerateContentRevision).ToList();
 
             // 返回成功结果，将修订内容存入 Data
             return new AgentStepExecutionResult
@@ -1008,7 +986,8 @@ namespace CuteBlogSystem.Service
                 Action = step.Action,
                 Success = true,
                 Message = "文章修订内容生成成功",
-                Data = output
+                Data = output,
+                MemoryFacts = memoryFacts
             };
         }
 
@@ -1080,6 +1059,7 @@ namespace CuteBlogSystem.Service
                 if (response.Data is UpdateArticleInformation dto)
                 {
                     var output = new UpdateArticleContentOutput(dto);
+                    var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.UpdateArticleContent).ToList();
 
                     return new AgentStepExecutionResult
                     {
@@ -1087,7 +1067,8 @@ namespace CuteBlogSystem.Service
                         Action = step.Action,
                         Success = response.Success,
                         Message = response.Message,
-                        Data = output
+                        Data = output,
+                        MemoryFacts = memoryFacts
                     };
                 }
                 else
@@ -1116,32 +1097,35 @@ namespace CuteBlogSystem.Service
             
         }
 
-        // 删除指定文章（物理删除或逻辑删除，取决于 Service 层实现）
+        // 删除指定文章
         private async Task<AgentStepExecutionResult> ExecuteDeleteArticleAsync(
             AgentPlanStep step,
             int userId,
             List<AgentStepExecutionResult> previousResults)
         {
-            // 获取文章 ID：优先从参数直接读取，若无效则尝试从前置步骤提取
-            var articleId = GetIntParam(step.Parameters, "articleId");
-
-            if (articleId <= 0)
+            var input = new DeleteArticleInput
             {
-                var fromStepNumber = GetIntParam(step.Parameters, "articleIdFromStep");
-                if (fromStepNumber > 0)
+                ArticleId = GetIntParam(step.Parameters, "articleId")
+            };
+
+
+            if (input.ArticleId <= 0)
+            {
+                input.ArticleIdFromStep = GetIntParam(step.Parameters, "articleIdFromStep");
+                if (input.ArticleIdFromStep > 0)
                 {
                     var previousResult = previousResults
-                        .FirstOrDefault(r => r.StepNumber == fromStepNumber);
+                        .FirstOrDefault(r => r.StepNumber == input.ArticleIdFromStep);
 
                     if (previousResult?.Data != null)
                     {
-                        articleId = ExtractFirstArticleId(previousResult.Data);
+                        input.ArticleId = ExtractFirstArticleId(previousResult.Data);
                     }
                 }
             }
 
             // 若仍无法获取有效的文章 ID，返回失败
-            if (articleId <= 0)
+            if (input.ArticleId <= 0)
             {
                 return new AgentStepExecutionResult
                 {
@@ -1156,20 +1140,35 @@ namespace CuteBlogSystem.Service
             _logger.LogWarning(
                 "执行 DeleteArticle，用户ID：{UserId}，准备删除文章ID：{ArticleId}",
                 userId,
-                articleId);
+                input.ArticleId);
 
             // 调用 Service 执行删除（需要在 ArticleService 中实现该方法）
-            var response = await _articleService.DeleteArticleAsync(articleId, userId);
+            var response = await _articleService.DeleteArticleAsync(input.ArticleId, userId);
 
-            // 返回结果
-            return new AgentStepExecutionResult
+            if (response.Data is DeleteArticleInformation dto)
             {
-                StepNumber = step.StepNumber,
-                Action = step.Action,
-                Success = response.Success,
-                Message = response.Message,
-                Data = response.Data // 可返回被删除文章的简要信息（如标题），用于最终回答
-            };
+                var output = new DeleteArticleOutput(dto);
+                return new AgentStepExecutionResult
+                {
+                    StepNumber = step.StepNumber,
+                    Action = step.Action,
+                    Success = response.Success,
+                    Message = response.Message,
+                    Data = output // 返回被删除文章的简要信息（如标题），用于最终回答
+                };
+            }
+            else
+            {
+                return new AgentStepExecutionResult
+                {
+                    StepNumber = step.StepNumber,
+                    Action = step.Action,
+                    Success = false,
+                    Message = "在将执行结果转化为数据传输对象时发生错误！",
+                    Data = null
+                };
+            }
+
         }
 
         // 根据失败步骤的结果和当前可用分类，使用 AI 生成失败原因分析和恢复建议
@@ -1427,45 +1426,51 @@ namespace CuteBlogSystem.Service
             AgentPlanStep step,
             List<AgentStepExecutionResult> previousResults)
         {
-            // 尝试从参数中直接获取正文内容
-            var directContent = GetStringParam(step.Parameters, "content", string.Empty);
-
-            // 获取引用前置步骤的编号
-            var contentFromStep = GetIntParam(step.Parameters, "contentFromStep");
-
-            // 获取用户问题
-            var question = GetStringParam(step.Parameters, "question");
-
-            string contentText;
-
-            // 优先使用直接传入的内容
-            if (!string.IsNullOrWhiteSpace(directContent))
+            // 构造输入对象，统一保存动作参数
+            var input = new AnswerQuestionFromContentInput
             {
-                contentText = directContent;
-            }
-            else
-            {
-                // 否则从前置步骤中查找对应结果
-                var contentResult = previousResults.FirstOrDefault(
-                    result => result.StepNumber == contentFromStep);
+                Content = GetStringParam(step.Parameters, "content", string.Empty),
+                ContentFromStep = GetIntParam(step.Parameters, "contentFromStep"),
+                Question = GetStringParam(step.Parameters, "question")
+            };
 
-                if (contentResult?.Data == null)
+            AgentMemoryFact? sourceArticleFact = null;
+
+            // 未直接提供正文时，从前置步骤中获取正文
+            if (string.IsNullOrWhiteSpace(input.Content))
+            {
+                var previousResult = previousResults.FirstOrDefault(
+                    result => result.StepNumber == input.ContentFromStep);
+
+                if (previousResult == null || previousResult.Data == null)
                 {
                     return new AgentStepExecutionResult
                     {
                         StepNumber = step.StepNumber,
                         Action = step.Action,
                         Success = false,
-                        Message = $"找不到第 {contentFromStep} 步的文章正文"
+                        Message = $"找不到第 {input.ContentFromStep} 步的文章正文"
                     };
                 }
 
+                // 从上游执行结果获取记忆事实
+                if (previousResult.MemoryFacts != null)
+                {
+                    sourceArticleFact = previousResult.MemoryFacts
+                        .LastOrDefault(f =>
+                            f.ArticleId.HasValue &&
+                            !string.IsNullOrWhiteSpace(f.ArticleTitle) &&
+                            (f.Type == ArticleMemoryType.ArticleSelected ||
+                             f.Type == ArticleMemoryType.ArticleUpdated ||
+                             f.Type == ArticleMemoryType.ArticleMentioned));
+                }
+
                 // 从前置步骤的数据中提取文本内容
-                contentText = ExtractContentText(contentResult.Data);
+                input.Content = ExtractContentText(previousResult.Data);
             }
 
             // 校验正文不能为空
-            if (string.IsNullOrWhiteSpace(contentText))
+            if (string.IsNullOrWhiteSpace(input.Content))
             {
                 return new AgentStepExecutionResult
                 {
@@ -1477,7 +1482,7 @@ namespace CuteBlogSystem.Service
             }
 
             // 校验问题不能为空
-            if (string.IsNullOrWhiteSpace(question))
+            if (string.IsNullOrWhiteSpace(input.Question))
             {
                 return new AgentStepExecutionResult
                 {
@@ -1488,13 +1493,10 @@ namespace CuteBlogSystem.Service
                 };
             }
 
-            // 构造输入对象
-            var input = new AnswerQuestionFromContentInput
-            {
-                Content = contentText,
-                ContentFromStep = contentFromStep > 0 ? contentFromStep : null,
-                Question = question
-            };
+            // 未指定有效前置步骤编号时，将其统一设置为 null
+            input.ContentFromStep = input.ContentFromStep > 0
+                ? input.ContentFromStep
+                : null;
 
             // 构造 AI 对话消息：系统指令限定只根据文章内容回答问题
             var messages = new List<ChatMessage>
@@ -1527,8 +1529,8 @@ namespace CuteBlogSystem.Service
 
             _logger.LogInformation(
                 "执行 AnswerQuestionFromContent，正文来源步骤：{StepNumber}，问题：{Question}",
-                contentFromStep,
-                question);
+                input.ContentFromStep,
+                input.Question);
 
             // 调用 AI 获取答案，限制输出 Token 数
             var response = await _chatClient.GetResponseAsync(
@@ -1563,8 +1565,13 @@ namespace CuteBlogSystem.Service
                 Question = input.Question,
                 Answer = answer,
                 ContentLength = input.Content?.Length ?? 0,
-                AnswerLength = answer.Length
+                AnswerLength = answer.Length,
+                SourceArticleId = sourceArticleFact?.ArticleId,
+                SourceArticleTitle = sourceArticleFact?.ArticleTitle,
+                SourceCategoryName = sourceArticleFact?.CategoryName
             };
+
+            var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.AnswerQuestionFromContent).ToList();
 
             // 返回成功结果，将输出对象存入 Data
             return new AgentStepExecutionResult
@@ -1573,7 +1580,217 @@ namespace CuteBlogSystem.Service
                 Action = step.Action,
                 Success = true,
                 Message = "文章问题回答成功",
-                Data = output
+                Data = output,
+                MemoryFacts = memoryFacts
+            };
+        }
+
+        // 执行 SelectArticleFromList 动作：根据匹配模式从文章列表中选出一篇
+        private async Task<AgentStepExecutionResult> ExecuteSelectArticleFromListAsync(
+            AgentPlanStep step,
+            List<AgentStepExecutionResult> previousResults,
+            string sessionId)
+        {
+            // 解析参数：匹配模式、列表来源步骤、索引或标题
+            var matchTypeText = GetStringParam(step.Parameters, "matchType");
+            System.Enum.TryParse<ArticleSelectionMatchMode>(
+                matchTypeText,
+                ignoreCase: true,
+                out var matchType);
+
+            var input = new SelectArticleFromListInput
+            {
+                ListFromStep = GetIntParam(step.Parameters, "listFromStep"),
+                MatchType = matchType,
+                Index = GetIntParam(step.Parameters, "index", -1),
+                Selection = GetStringParam(step.Parameters, "selection")
+            };
+
+            List<RecentMentionedArticleItem>? articles = null;
+
+            // 首先尝试从计划中的前置步骤获取文章列表
+            if (input.ListFromStep > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.Success && r.StepNumber == input.ListFromStep);
+
+                if (previousResult?.Data != null)
+                {
+                    // 通过 IArticleListOutput 接口判断 Action Output 能返回文章列表
+                    if (previousResult.Data is IArticleListOutput articleListOutput)
+                    {
+                        articles = articleListOutput.Articles
+                            .Select(a => new RecentMentionedArticleItem
+                            {
+                                ArticleId = a.Id,
+                                Title = a.Title,
+                                CategoryName = a.CategoryName
+                            })
+                            .ToList();
+                    }
+                }
+            }
+
+            // 如果从计划中获取不到，尝试从会话记忆中恢复最近提及的文章列表
+            if (articles == null || articles.Count == 0)
+            {
+                var memory = await _memoryRepository.GetByConversationIdAsync(sessionId);
+
+                if (memory != null && memory.RecentMentionedArticlesJson != null)
+                {
+                    try
+                    {
+                        var memoryArticles = JsonSerializer.Deserialize<List<RecentMentionedArticleItem>>(
+                            memory.RecentMentionedArticlesJson);
+                        if (memoryArticles != null && memoryArticles.Count > 0)
+                        {
+                            articles = memoryArticles;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "反序列化最近提及文章JSON失败，SessionId: {SessionId}", sessionId);
+                    }
+                }
+            }
+
+            // 仍无列表则失败
+            if (articles == null || articles.Count == 0)
+            {
+                return new AgentStepExecutionResult
+                {
+                    StepNumber = step.StepNumber,
+                    Action = step.Action,
+                    Success = false,
+                    Message = "当前上下文缺少文章列表，请先执行‘搜索文章’步骤后再尝试选择。"
+                };
+            }
+
+            // 按标题匹配
+            if (input.MatchType == ArticleSelectionMatchMode.ByTitle)
+            {
+                if (string.IsNullOrWhiteSpace(input.Selection))
+                {
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = "未提供要搜索的文章标题。"
+                    };
+                }
+
+                // 模糊匹配（不区分大小写，包含子串）
+                var matchedArticles = articles
+                    .Where(a => a.Title?.IndexOf(input.Selection, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
+
+                if (matchedArticles.Count == 0)
+                {
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = $"未在文章列表中找到标题包含“{input.Selection}”的文章。"
+                    };
+                }
+                else if (matchedArticles.Count == 1)
+                {
+                    var matchedArticle = matchedArticles.First();
+
+                    var output = new SelectArticleFromListOutput
+                    {
+                        ArticleId = matchedArticle.ArticleId,
+                        Title = matchedArticle.Title,
+                        CategoryName = matchedArticle.CategoryName,
+                        MatchMode = ArticleSelectionMatchMode.ByTitle,
+                        Selection = input.Selection,
+                    };
+
+                    var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.SelectArticleFromList).ToList();
+
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = true,
+                        Message = $"成功选择到文章：{output.Title}",
+                        Data = output,
+                        MemoryFacts = memoryFacts
+                    };
+                }
+                else
+                {
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = $"关键词“{input.Selection}”匹配到 {matchedArticles.Count} 篇文章，无法自动选择。请使用更具体的标题重试。"
+                    };
+                }
+            }
+
+            // 按索引匹配
+            if (input.MatchType == ArticleSelectionMatchMode.ByIndex)
+            {
+                // 校验索引是否有效（>0）
+                if (!input.Index.HasValue || input.Index.Value <= 0)
+                {
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = "未提供有效的文章序号，请指定 index 参数（从 1 开始）。"
+                    };
+                }
+
+                // 转为从0开始的索引
+                int targetIndex = input.Index.Value - 1;
+
+                if (targetIndex < 0 || targetIndex >= articles.Count)
+                {
+                    return new AgentStepExecutionResult
+                    {
+                        StepNumber = step.StepNumber,
+                        Action = step.Action,
+                        Success = false,
+                        Message = $"文章序号 {input.Index.Value} 超出范围，当前列表共有 {articles.Count} 篇文章。"
+                    };
+                }
+
+                var matchedArticle = articles[targetIndex];
+
+                var output = new SelectArticleFromListOutput
+                {
+                    ArticleId = matchedArticle.ArticleId,
+                    Title = matchedArticle.Title,
+                    CategoryName = matchedArticle.CategoryName,
+                    MatchMode = ArticleSelectionMatchMode.ByIndex,
+                    Selection = input.Index.Value.ToString(),
+                };
+
+                var memoryFacts = output.GetMemoryFacts(AgentActionRegistry.SelectArticleFromList).ToList();
+
+                return new AgentStepExecutionResult
+                {
+                    StepNumber = step.StepNumber,
+                    Action = step.Action,
+                    Success = true,
+                    Data = output,
+                    Message = $"已选择第 {input.Index.Value} 篇文章：“{matchedArticle.Title}”。",
+                    MemoryFacts = memoryFacts
+                };
+            }
+
+            // 匹配模式不支持
+            return new AgentStepExecutionResult
+            {
+                StepNumber = step.StepNumber,
+                Action = step.Action,
+                Success = false,
+                Message = $"不支持的匹配模式：{input.MatchType}。"
             };
         }
 
@@ -1864,6 +2081,17 @@ namespace CuteBlogSystem.Service
 
             return ConvertObjectToText(data);
         }
-        
+
+        // 从步骤执行结果中提取最后一条有效的文章记忆事实（去重、过滤未知类型）
+        private AgentMemoryFact? ExtractArticleFactFromStepResult(AgentStepExecutionResult? result)
+        {
+            // 若结果或记忆事实列表为空，直接返回 null
+            return result?.MemoryFacts?
+                .LastOrDefault(f =>
+                    f.ArticleId.HasValue &&              // 必须有文章 ID
+                    !string.IsNullOrWhiteSpace(f.ArticleTitle) && // 必须有标题
+                    f.Type != ArticleMemoryType.Unknown); // 排除未知类型
+        }
+
     }
 }

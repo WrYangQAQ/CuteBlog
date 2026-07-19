@@ -42,6 +42,9 @@
         // 最近一次重置上下文的时间
         public DateTime? ContextResetAt { get; set; }
 
+        // 最近上下文中提到的文章列表序列化的json
+        public string? RecentMentionedArticlesJson { get; set; }
+
         // 导航属性，关联到 AgentConversation
         public AgentConversation? Conversation { get; set; }
     }

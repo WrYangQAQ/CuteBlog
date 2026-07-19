@@ -134,6 +134,21 @@ namespace CuteBlogSystem.Service
                     - 该动作只用于让风险控制层识别并拒绝删除请求，不会真正执行删除。
                     - 只有当用户明确表达“删除文章”、“删掉这篇”、“移除这篇文章”等意图时才使用。
                     - 如果用户没有提供文章ID，且上下文中没有可指代的文章，不要编造 articleId，应要求用户明确指定。
+                
+                13. SelectArticleFromList
+                    用于从前置步骤返回的文章列表中选择某一篇文章，并将其作为后续上下文中的“当前选中文章”。
+                    适用场景：
+                    - 用户说“第三篇”“第二个”“列表里的第一篇”等基于序号的选择。
+                    - 用户说“Redis 那篇”“标题包含授权认证的那篇”等基于标题或关键词的选择。
+                    参数：
+                    - listFromStep：文章列表来源步骤编号。
+                    - matchType：匹配方式，只能是 ByIndex 或 ByTitle。
+                    - index：当 matchType = ByIndex 时填写，表示第几篇文章，使用 1-based 序号。
+                    - selection：当 matchType = ByTitle 时填写，表示标题关键词或用户描述。
+                    注意：
+                    - 如果用户基于刚刚返回的文章列表进行选择，应使用 SelectArticleFromList。
+                    - 如果用户说“第三篇文章”“第二个结果”，不要直接猜 articleId，必须通过 SelectArticleFromList 选中。
+                    - 如果用户说“Redis 那篇”，也不要直接猜 articleId，应通过 SelectArticleFromList 按标题选择。
 
 
                 你必须只输出 JSON，不要输出 Markdown，不要输出解释文字。
@@ -188,6 +203,28 @@ namespace CuteBlogSystem.Service
                 - 如果用户要求“润色、改写、优化表达、文学性、通俗化”，禁止使用 SummarizeContent，必须使用 GenerateContentRevision。
                 - 如果用户要求总结博客系统中已有的文章，例如“这篇文章主要讲了什么”“总结技术分类点赞最高文章”，才先查询/获取正文，再使用 SummarizeContent(contentFromStep=...)。
                 - 如果后续步骤需要使用前面步骤的文章ID，用 articleIdFromStep 表示。
+                - 返回文章列表的动作，例如 SearchArticlesByCategory、GetMyArticles，不应该默认代表用户选中了第一篇文章。
+                - 当文章列表结果有多篇，而用户后续说“第一篇、第二篇、第三篇、Redis 那篇、标题包含 xxx 的那篇”时，
+                  必须使用 SelectArticleFromList 先从文章列表中选中具体文章，再进行 GetArticleContentById、UpdateArticleTitle、GenerateContentRevision、UpdateArticleContent 等后续操作。
+                - 当用户使用序号选择文章时：
+                  SelectArticleFromList 的 matchType 使用 ByIndex，index 填用户说的序号，listFromStep 指向文章列表来源步骤。
+                - 当用户使用标题或标题关键词选择文章时：
+                  SelectArticleFromList 的 matchType 使用 ByTitle，selection 填用户说的标题关键词，listFromStep 指向文章列表来源步骤。
+                - 不要把“第三篇文章”直接转换成 articleId = 3；它表示列表中的第 3 项，不是数据库文章 ID。
+                - “现在技术分类下有哪些文章”
+                  → Step 1: SearchArticlesByCategory，categoryName = "技术"，sortBy = Latest，top = 20
+
+                - 用户上一轮刚查询过文章列表，接着说“帮我总结第三篇文章”
+                  → Step 1: SelectArticleFromList，listFromStep = 0，matchType = ByIndex，index = 3
+                  → Step 2: GetArticleContentById，articleIdFromStep = 1
+                  → Step 3: SummarizeContent，contentFromStep = 2
+
+                - “查找我发布的文章，然后润色 Redis 那篇文章”
+                  → Step 1: GetMyArticles，sortBy = Latest，top = 20
+                  → Step 2: SelectArticleFromList，listFromStep = 1，matchType = ByTitle，selection = "Redis"
+                  → Step 3: GetArticleContentById，articleIdFromStep = 2
+                  → Step 4: GenerateContentRevision，contentFromStep = 3，instruction = "润色文章"
+                  → Step 5: UpdateArticleContent，articleIdFromStep = 2，newContentFromStep = 4
                 - 如果后续步骤需要使用前面步骤的正文，用 contentFromStep 表示。
                 - 如果用户要求“对比”两篇文章，必须先分别查询两篇文章，再分别获取两篇文章正文，最后使用 CompareContents。
                 - 如果用户要求对比“点赞最高”和“浏览量最高”的文章：

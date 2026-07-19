@@ -121,7 +121,7 @@ namespace CuteBlogSystem.Service
             // 对消息进行预处理
             // 如果会话存在，使用该会话的SessionId；如果会话不存在，创建新的会话
             // 将用户消息保存到数据库中
-            ApiResponse dealMessageResponse = await _agentMessageService.DealUserMessageAsync(userMessage);
+            var dealMessageResponse = await _agentMessageService.DealUserMessageAsync(userMessage);
             if (!dealMessageResponse.Success)
             {
                 return new AgentAskResponse
@@ -451,7 +451,7 @@ namespace CuteBlogSystem.Service
                 try
                 {
                     // 执行批准后的计划并获取响应
-                    response = await ExecuteApprovedPlanAsync(confirmedPlan.Plan, confirmedPlan.UserMessage, userId);
+                    response = await ExecuteApprovedPlanAsync(confirmedPlan.Plan, confirmedPlan.UserMessage, userId, sessionId);
 
                     // 对返回的响应做最后处理，包括安全检测、消息保存等等
                     return await FinalizeAgentResponseAsync
@@ -603,7 +603,6 @@ namespace CuteBlogSystem.Service
                         }
                     };
                 }
-
                 
                 if (riskLevel == AgentActionRiskLevel.RequireConfirmation)
                 {
@@ -625,8 +624,6 @@ namespace CuteBlogSystem.Service
                         };
                     }
 
-
-
                     return new AgentAskResponse
                     {
                         Success = false,
@@ -641,7 +638,7 @@ namespace CuteBlogSystem.Service
 
                 else
                 {
-                    return await ExecuteApprovedPlanAsync(plan, userMessage.Content, userId);
+                    return await ExecuteApprovedPlanAsync(plan, userMessage.Content, userId, userMessage.SessionId);
                 }    // 正常执行plan
 
             }
@@ -792,10 +789,10 @@ namespace CuteBlogSystem.Service
         }
 
         // 对批准执行的 plan 进行执行
-        private async Task<AgentAskResponse> ExecuteApprovedPlanAsync(AgentPlan plan, string userMessage, int userId)
+        private async Task<AgentAskResponse> ExecuteApprovedPlanAsync(AgentPlan plan, string userMessage, int userId, string sessionId)
         {
             // 执行计划并获取执行结果
-            var executionResult = await _agentPlanExecutor.ExecuteAsync(plan, userId);
+            var executionResult = await _agentPlanExecutor.ExecuteAsync(plan, userId, sessionId);
 
             // 检查执行结果中是否存在失败步骤
             var hasFailedStep = executionResult.StepResults.Any(s => !s.Success);
@@ -944,7 +941,7 @@ namespace CuteBlogSystem.Service
             }
 
             // 保存助手消息并更新会话时间（需要 sessionId）
-            if (!string.IsNullOrWhiteSpace(sessionId))
+            if (!string.IsNullOrWhiteSpace(sessionId) && !response.RequiresConfirmation)
             {
                 try
                 {
@@ -990,7 +987,7 @@ namespace CuteBlogSystem.Service
 
                     if (ShouldUpdateMemory(response))
                     {
-                        var updated = await _memoryService.UpdateAfterWorkflowAsync(
+                        var updated = await _memoryService.UpdateConversationMemoryAfterWorkflowAsync(
                             sessionId,
                             userMessage,
                             response.Answer,

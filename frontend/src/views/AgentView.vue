@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { Archive, Bug, ClipboardCheck, Download, Eye, MoreHorizontal, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Send, Trash2, X } from "lucide-vue-next";
+import { Archive, Bug, CircleArrowDown, CircleArrowUp, ClipboardCheck, Download, Eye, MoreHorizontal, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-vue-next";
 import {
   archiveAgentConversationApi,
   compareAgentEvaluationRunsApi,
@@ -47,6 +47,8 @@ const sessionId = ref("");
 const conversations = ref([]);
 const messages = ref([createWelcomeMessage()]);
 const dialogRef = ref(null);
+const inputRef = ref(null);
+const expandedUserMessageIndexes = ref(new Set());
 const openConversationMenuId = ref("");
 const conversationActionLoadingId = ref("");
 const confirmationLoadingId = ref("");
@@ -123,6 +125,36 @@ function createWelcomeMessage() {
 
 function renderAssistantMarkdown(content) {
   return DOMPurify.sanitize(marked.parse(content || ""));
+}
+
+function shouldCollapseUserMessage(message) {
+  if (message?.role !== "user") return false;
+  const content = message.content || "";
+  const hardLineCount = content.split(/\r?\n/).length;
+  return hardLineCount > 7 || content.length > 260;
+}
+
+function isUserMessageExpanded(index) {
+  return expandedUserMessageIndexes.value.has(index);
+}
+
+function toggleUserMessage(index) {
+  const next = new Set(expandedUserMessageIndexes.value);
+  if (next.has(index)) {
+    next.delete(index);
+  } else {
+    next.add(index);
+  }
+  expandedUserMessageIndexes.value = next;
+}
+
+function adjustInputHeight() {
+  nextTick(() => {
+    const textarea = inputRef.value;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  });
 }
 
 function scrollDialogToBottom() {
@@ -1287,6 +1319,7 @@ async function sendMessage() {
 
   messages.value.push({ role: "user", content: text });
   input.value = "";
+  adjustInputHeight();
   loading.value = true;
 
   try {
@@ -1308,6 +1341,7 @@ async function sendMessage() {
 }
 
 watch(messages, scrollDialogToBottom, { deep: true });
+watch(input, adjustInputHeight);
 
 onMounted(() => {
   document.addEventListener("click", closeConversationMenu);
@@ -1317,6 +1351,7 @@ onMounted(() => {
   }
   loadConversations();
   scrollDialogToBottom();
+  adjustInputHeight();
 });
 
 onBeforeUnmount(() => {
@@ -1348,7 +1383,26 @@ onBeforeUnmount(() => {
                 class="markdown-body agent-markdown"
                 v-html="renderAssistantMarkdown(message.content)"
               ></div>
-              <pre v-else>{{ message.content }}</pre>
+              <div
+                v-else
+                class="agent-user-message"
+                :class="{
+                  collapsed: shouldCollapseUserMessage(message) && !isUserMessageExpanded(index)
+                }"
+              >
+                <pre>{{ message.content }}</pre>
+              </div>
+              <button
+                v-if="shouldCollapseUserMessage(message)"
+                type="button"
+                class="agent-message-toggle"
+                :aria-label="isUserMessageExpanded(index) ? '收起用户消息' : '展开用户消息'"
+                :title="isUserMessageExpanded(index) ? '收起' : '展开全文'"
+                @click.stop="toggleUserMessage(index)"
+              >
+                <CircleArrowUp v-if="isUserMessageExpanded(index)" :size="24" />
+                <CircleArrowDown v-else :size="24" />
+              </button>
               <div
                 v-if="message.confirmationStatus && message.confirmationStatus !== 'none'"
                 class="agent-confirm-box"
@@ -1392,37 +1446,37 @@ onBeforeUnmount(() => {
           <p v-if="loading" class="agent-thinking">Sharky Agent 正在思考...</p>
         </div>
 
-        <form class="agent-input-box" @submit.prevent="sendMessage">
-          <textarea
-            v-model="input"
-            :disabled="conversationView === 'archived'"
-            :placeholder="conversationView === 'archived'
-              ? '归档会话仅供查看，恢复后可继续对话'
-              : '输入你的问题，或告诉我你想写的内容...'"
-            @keydown.ctrl.enter.prevent="sendMessage"
-          />
-          <div class="agent-tool-row">
-            <button class="agent-send" :disabled="!canSend">
-              <Send :size="17" />
-              发送
+        <form class="agent-compose" @submit.prevent="sendMessage">
+          <div class="agent-input-box">
+            <textarea
+              ref="inputRef"
+              v-model="input"
+              rows="1"
+              :disabled="conversationView === 'archived'"
+              :placeholder="conversationView === 'archived'
+                ? '归档会话仅供查看，恢复后可继续对话'
+                : '输入你的问题，或告诉我你想写的内容...'"
+              @input="adjustInputHeight"
+              @keydown.ctrl.enter.prevent="sendMessage"
+            />
+          </div>
+          <div class="agent-compose-actions">
+            <div class="agent-note-actions">
+              <button v-if="isAdmin" type="button" @click="openEvaluationPanel">
+                <ClipboardCheck :size="15" />
+                评估中心
+              </button>
+              <button type="button" @click="openWorkflowLogPanel">
+                <Bug :size="15" />
+                执行日志
+              </button>
+              <button type="button" @click="newConversation">清空对话</button>
+            </div>
+            <button class="agent-send" :disabled="!canSend" aria-label="发送消息" title="发送">
+              <CircleArrowUp :size="26" />
             </button>
           </div>
         </form>
-
-        <div class="agent-note">
-          <span>Sharky 可能会出错，请核查重要信息。</span>
-          <div class="agent-note-actions">
-            <button v-if="isAdmin" type="button" @click="openEvaluationPanel">
-              <ClipboardCheck :size="15" />
-              评估中心
-            </button>
-            <button type="button" @click="openWorkflowLogPanel">
-              <Bug :size="15" />
-              执行日志
-            </button>
-            <button type="button" @click="newConversation">清空对话</button>
-          </div>
-        </div>
       </section>
     </main>
 

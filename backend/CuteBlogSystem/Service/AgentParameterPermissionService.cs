@@ -28,7 +28,9 @@ namespace CuteBlogSystem.Service
                 }
 
                 // 对于涉及文章操作的步骤，检查文章的所有权
-                if (step.Action == AgentActionRegistry.UpdateArticleContent || step.Action == AgentActionRegistry.UpdateArticleTitle)
+                if (step.Action == AgentActionRegistry.UpdateArticleContent 
+                    || step.Action == AgentActionRegistry.UpdateArticleTitle
+                    || step.Action == AgentActionRegistry.DeleteArticle)
                 {
                     var articleId = GetIntParam(step.Parameters, "articleId");
 

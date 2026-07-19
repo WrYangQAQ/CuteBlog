@@ -327,7 +327,6 @@ namespace CuteBlogSystem.Service
             }
         }
 
-
         // 上传文章封面图片
         public async Task<ApiResponse> UploadArticleCoverAsync(IFormFile file, int userId)
         {
@@ -375,32 +374,70 @@ namespace CuteBlogSystem.Service
             return new ApiResponse(true, "封面上传成功！", coverUrl);
         }
 
-        // 删除文章（同时删除这篇文章下所有评论与二级评论）
-        // 只有文章作者或者管理员可以删除文章
+        // 删除指定文章，包含存在性校验和权限校验（仅作者或管理员可删除，同时删除这篇文章下所有评论与二级评论）
         public async Task<ApiResponse> DeleteArticleAsync(int articleId, int userId)
         {
+            // 根据文章ID查询文章实体
+            var article = await _articleRepository.GetArticleByIdAsync(articleId);
+
+            // 文章不存在，返回未找到错误
+            if (article == null)
+            {
+                var dto = new DeleteArticleInformation
+                {
+                    ArticleId = articleId,
+                    Title = "未找到ID对应的文章",
+                    Deleted = false,
+                    Message = $"未找到ID为{articleId}的文章！"
+                };
+
+                return new ApiResponse(false, dto.Message, dto, code: ResponseCode.NotFound);
+            }
+
+            // 检查当前用户是否有权限删除（作者本人或管理员）
+            if (!await CheckArticleAuthorOrAdminAsync(articleId, userId))
+            {
+                var dto = new DeleteArticleInformation
+                {
+                    ArticleId = articleId,
+                    Title = article.Title,
+                    Deleted = false,
+                    Message = "没有权限删除这篇文章！"
+                };
+
+                return new ApiResponse(false, dto.Message, dto, code: ResponseCode.Unauthorized);
+            }
+
             try
             {
-                if (!await CheckArticleAuthorOrAdminAsync(articleId, userId))
-                {
-                    return new ApiResponse(false, $"没有权限删除这篇文章！", code: ResponseCode.Unauthorized);
-                }
-                // 调用仓储层，根据id查询文章
-                Article article = await _articleRepository.GetArticleByIdAsync(articleId);
-                // 验证是否存在这篇文章
-                if (article == null)
-                {
-                    return new ApiResponse(false, $"未找到ID为{articleId}的文章！", code: ResponseCode.NotFound);
-                }
-                // 调用仓储层的方法，删除这篇文章
+                // 执行物理删除（或逻辑删除，取决于Repository层实现）
                 await _articleRepository.DeleteArticleByIdAsync(articleId);
-                return new ApiResponse(true, "删除文章成功！");
+
+                // 删除成功，构造成功响应DTO
+                var dto = new DeleteArticleInformation
+                {
+                    ArticleId = articleId,
+                    Title = article.Title,
+                    Deleted = true,
+                    Message = "删除文章成功！"
+                };
+
+                return new ApiResponse(true, dto.Message, dto);
             }
             catch (Exception ex)
             {
-                // 记录异常日志
+                // 删除过程中发生异常，记录错误日志并返回失败响应
                 _logger.LogError(ex, $"删除文章失败！\nex.message:{ex.Message}");
-                return new ApiResponse(false, $"删除文章失败！", code: ResponseCode.UploadFailed);
+
+                var dto = new DeleteArticleInformation
+                {
+                    ArticleId = articleId,
+                    Title = article.Title,
+                    Deleted = false,
+                    Message = "删除文章失败！"
+                };
+
+                return new ApiResponse(false, dto.Message, dto, code: ResponseCode.UploadFailed);
             }
         }
 
@@ -863,6 +900,27 @@ namespace CuteBlogSystem.Service
             return new ApiResponse(true, $"根据文章ID'{articleId}'查询标签列表成功！", tagNames);
         }
 
+        // 根据标签ID查询对应文章列表
+        public async Task<ApiResponse> GetArticlesByTagIdAsync(int tagId)
+        {
+            if (tagId < 0)
+            {
+                return new ApiResponse(false, "传入ID有误！", code: ResponseCode.InvalidInput);
+            }
+
+            var articles = await _articleRepository.GetArticlesByTagIdAsync(tagId);
+
+            if (articles == null || articles.Count == 0)
+            {
+                return new ApiResponse(false, "未能找到该标签下的文章，可能目前还没有携带该标签的文章，请稍后重试");
+            }
+            else
+            {
+                var dtos = articles.Select(article => new GetArticleListDTO(article)).ToList();
+                return new ApiResponse(true, "文章查询成功", dtos, ResponseCode.Success);
+            }
+        }
+
         // 根据文章Id更新对应文章标题
         public async Task<ApiResponse> UpdateArticleTitleAsync(int articleId, string? newTitle, int userId)
         {
@@ -913,6 +971,135 @@ namespace CuteBlogSystem.Service
             {
                 _logger.LogError(ex, $"更新文章标题失败！\nex.message:{ex.Message}");
                 return new ApiResponse(false, $"更新文章标题失败！", code: ResponseCode.UpdateFailed);
+            }
+        }
+
+        // 根据内容从不同维度查找文章
+        public async Task<ApiResponse> GetArticlesBySelection(string queryText, ArticleSearchScope scope,
+            bool onlyMine, ArticleSortBy sortBy, int? userId, int top = 10)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(queryText))
+                {
+                    return new ApiResponse(
+                        false,
+                        "查询内容不能为空！",
+                        code: ResponseCode.InvalidInput);
+                }
+
+                if (top <= 0 || top > 10)
+                {
+                    return new ApiResponse(
+                        false,
+                        "top 必须在 1 到 10 之间！",
+                        code: ResponseCode.InvalidInput);
+                }
+
+                if (onlyMine && (userId == null || userId <= 0))
+                {
+                    return new ApiResponse(
+                        false,
+                        "查询自己的文章时必须提供有效的用户ID！",
+                        code: ResponseCode.InvalidInput);
+                }
+
+                queryText = queryText.Trim();
+
+                List<Article> articles;
+
+                switch (scope)
+                {
+                    case ArticleSearchScope.ByTitle:
+                        articles = await _articleRepository.GetArticlesByTitleAsync(
+                            queryText,
+                            onlyMine,
+                            userId);
+                        break;
+
+                    case ArticleSearchScope.ByCategory:
+                        articles = await _articleRepository.GetArticlesByCategoryNameAsync(
+                            queryText,
+                            onlyMine,
+                            userId);
+                        break;
+
+                    case ArticleSearchScope.ByContent:
+                        articles = await _articleRepository.GetArticlesByContentAsync(
+                            queryText,
+                            onlyMine,
+                            userId);
+                        break;
+
+                    case ArticleSearchScope.ByTag:
+                        articles = await _articleRepository.GetArticlesByTagNameAsync(
+                            queryText,
+                            onlyMine,
+                            userId);
+                        break;
+
+                    case ArticleSearchScope.ByAll:
+                        articles = await _articleRepository.GetArticlesByQueryTextAsync(
+                            queryText,
+                            onlyMine,
+                            userId);
+                        break;
+
+                    default:
+                        return new ApiResponse(
+                            false,
+                            $"不支持的文章搜索范围：{scope}",
+                            code: ResponseCode.InvalidInput);
+                }
+
+                articles = sortBy switch
+                {
+                    ArticleSortBy.MostLiked => articles
+                        .OrderByDescending(article => article.LikeCount)
+                        .ThenByDescending(article => article.CreatedAt)
+                        .ToList(),
+
+                    ArticleSortBy.MostViewed => articles
+                        .OrderByDescending(article => article.ViewCount)
+                        .ThenByDescending(article => article.CreatedAt)
+                        .ToList(),
+
+                    ArticleSortBy.Latest => articles
+                        .OrderByDescending(article => article.CreatedAt)
+                        .ToList(),
+
+                    _ => articles
+                        .OrderByDescending(article => article.CreatedAt)
+                        .ToList()
+                };
+
+                var articleList = articles
+                    .Take(top)
+                    .Select(article => new GetArticleListDTO(article))
+                    .ToList();
+
+                return new ApiResponse(
+                    true,
+                    articleList.Count > 0
+                        ? $"成功找到 {articleList.Count} 篇文章！"
+                        : "未找到符合条件的文章。",
+                    articleList,
+                    ResponseCode.Success);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "从不同维度查找文章失败。QueryText：{QueryText}，Scope：{Scope}，OnlyMine：{OnlyMine}，UserId：{UserId}",
+                    queryText,
+                    scope,
+                    onlyMine,
+                    userId);
+
+                return new ApiResponse(
+                    false,
+                    "查找文章失败！",
+                    code: ResponseCode.InternalError);
             }
         }
     }
