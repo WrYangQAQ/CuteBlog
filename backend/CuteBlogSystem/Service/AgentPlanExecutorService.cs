@@ -4,12 +4,14 @@ using CuteBlogSystem.DTO;
 using CuteBlogSystem.DTO.Agent;
 using CuteBlogSystem.DTO.AgentAction;
 using CuteBlogSystem.DTO.Blog;
+using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
+using CuteBlogSystem.Helper;
 using CuteBlogSystem.Repository;
-using CuteBlogSystem.Util;
 using Microsoft.Extensions.AI;
 using System.IO;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -18,8 +20,11 @@ namespace CuteBlogSystem.Service
     // 负责按计划（AgentPlan）逐步执行操作，并收集每步结果
     public class AgentPlanExecutorService
     {
+        private const string AgentDefaultCoverUrl = "/Picture/ArticleImage/Cover/dc47c400-b7ec-45b4-8ec3-a12e859973b1.png";
+
         private readonly ArticleService _articleService;
         private readonly CategoryService _categoryService;
+        private readonly TagService _tagService;
         private readonly UserService _userService;
         private readonly IChatClient _chatClient;
         private readonly ILogger<AgentPlanExecutorService> _logger;
@@ -30,6 +35,7 @@ namespace CuteBlogSystem.Service
         public AgentPlanExecutorService(
             ArticleService articleService,
             CategoryService categoryService,
+            TagService tagService,
             UserService userService,
             IChatClient chatClient,
             ILogger<AgentPlanExecutorService> logger,
@@ -39,6 +45,7 @@ namespace CuteBlogSystem.Service
         {
             _articleService = articleService;
             _categoryService = categoryService;
+            _tagService = tagService;
             _userService = userService;
             _chatClient = chatClient;
             _logger = logger;
@@ -132,6 +139,34 @@ namespace CuteBlogSystem.Service
 
                     case AgentActionRegistry.SelectArticleFromList:
                         stepResult = await ExecuteSelectArticleFromListAsync(step, executionResult.StepResults, sessionId);
+                        break;
+
+                    case AgentActionRegistry.SearchArticlesByKeyword:
+                        stepResult = await ExecuteSearchArticlesByKeywordAsync(step, userId);
+                        break;
+
+                    case AgentActionRegistry.GetTagByName:
+                        stepResult = await ExecuteGetTagByNameAsync(step);
+                        break;
+
+                    case AgentActionRegistry.SearchArticlesByTag:
+                        stepResult = await ExecuteSearchArticlesByTagAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.GetTagsByCategoryId:
+                        stepResult = await ExecuteGetTagsByCategoryIdAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.RecommendCategory:
+                        stepResult = await ExecuteRecommendCategoryAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.RecommendTags:
+                        stepResult = await ExecuteRecommendTagsAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.CreateArticle:
+                        stepResult = await ExecuteCreateArticleAsync(step, userId, executionResult.StepResults);
                         break;
 
                     default:
@@ -229,6 +264,30 @@ namespace CuteBlogSystem.Service
 
                     case AgentActionRegistry.GetMyArticles:
                         stepResult = await ExecuteGetMyArticlesAsync(step, userId);
+                        break;
+
+                    case AgentActionRegistry.SearchArticlesByKeyword:
+                        stepResult = await ExecuteSearchArticlesByKeywordAsync(step, userId);
+                        break;
+
+                    case AgentActionRegistry.GetTagByName:
+                        stepResult = await ExecuteGetTagByNameAsync(step);
+                        break;
+
+                    case AgentActionRegistry.SearchArticlesByTag:
+                        stepResult = await ExecuteSearchArticlesByTagAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.GetTagsByCategoryId:
+                        stepResult = await ExecuteGetTagsByCategoryIdAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.RecommendCategory:
+                        stepResult = await ExecuteRecommendCategoryAsync(step, executionResult.StepResults);
+                        break;
+
+                    case AgentActionRegistry.RecommendTags:
+                        stepResult = await ExecuteRecommendTagsAsync(step, executionResult.StepResults);
                         break;
 
                     default:
@@ -1619,11 +1678,15 @@ namespace CuteBlogSystem.Service
                     if (previousResult.Data is IArticleListOutput articleListOutput)
                     {
                         articles = articleListOutput.Articles
-                            .Select(a => new RecentMentionedArticleItem
+                            .Select((a, index) => new RecentMentionedArticleItem
                             {
+                                Index = index + 1,
                                 ArticleId = a.Id,
                                 Title = a.Title,
-                                CategoryName = a.CategoryName
+                                CategoryName = a.CategoryName,
+                                LikeCount = a.LikeCount,
+                                ViewCount = a.ViewCount,
+                                SourceAction = previousResult.Action
                             })
                             .ToList();
                     }
@@ -1794,6 +1857,561 @@ namespace CuteBlogSystem.Service
             };
         }
 
+        // 执行 SearchArticlesByKeyword 动作：按关键词在指定范围内搜索文章，支持排序和分页
+        private async Task<AgentStepExecutionResult> ExecuteSearchArticlesByKeywordAsync(AgentPlanStep step, int userId)
+        {
+            // 解析输入参数
+            var input = new SearchArticlesByKeywordInput
+            {
+                QueryText = GetStringParam(step.Parameters, "queryText"),
+                SearchScope = GetEnumParam(step.Parameters, "searchScope", ArticleSearchScope.ByAll),
+                ArticleScope = GetEnumParam(step.Parameters, "articleScope", ArticleScope.All),
+                SortBy = GetEnumParam(step.Parameters, "sortBy", ArticleSortBy.Latest),
+                Top = GetIntParam(step.Parameters, "top", 10)
+            };
+
+            // 关键词不能为空
+            if (string.IsNullOrWhiteSpace(input.QueryText))
+            {
+                return FailResult(step, "关键词不能为空。");
+            }
+
+            // 限制 Top 范围，防止一次返回过多数据
+            input.Top = Math.Clamp(input.Top <= 0 ? 10 : input.Top, 1, 10);
+            var onlyMine = input.ArticleScope == ArticleScope.My;
+
+            // 记录执行日志
+            _logger.LogInformation(
+                "执行 SearchArticlesByKeyword，关键词：{QueryText}，范围：{SearchScope}，文章范围：{ArticleScope}，数量：{Top}，排序：{SortBy}",
+                input.QueryText,
+                input.SearchScope,
+                input.ArticleScope,
+                input.Top,
+                input.SortBy);
+
+            // 调用服务层执行搜索
+            var response = await _articleService.GetArticlesBySelection(
+                input.QueryText,
+                input.SearchScope,
+                onlyMine,
+                input.SortBy,
+                onlyMine ? userId : null);
+
+            // 服务调用失败或返回数据格式不正确
+            if (!response.Success || response.Data is not List<GetArticleListDTO> articleDtos)
+            {
+                return FailResult(step, response.Message ?? "关键词查询文章失败。");
+            }
+
+            // 转换 DTO 并应用 Top 限制
+            var allArticles = ConvertArticleList(articleDtos);
+            var returnedArticles = ApplyArticleSortAndTop(allArticles, input.SortBy, input.Top);
+
+            var output = new SearchArticlesByKeywordOutput
+            {
+                QueryText = input.QueryText,
+                SearchScope = input.SearchScope,
+                ArticleScope = input.ArticleScope,
+                SortBy = input.SortBy,
+                Articles = returnedArticles,
+                TotalCount = allArticles.Count
+            };
+
+            // 返回成功结果
+            return SuccessResult(step, "关键词查询文章成功", output);
+        }
+
+        // 执行 GetTagByName 动作：根据标签名查找标签信息，返回标签详情（含关联分类名）
+        private async Task<AgentStepExecutionResult> ExecuteGetTagByNameAsync(AgentPlanStep step)
+        {
+            // 解析输入参数：标签名
+            var input = new GetTagByNameInput
+            {
+                TagName = GetStringParam(step.Parameters, "tagName")
+            };
+
+            // 标签名不能为空
+            if (string.IsNullOrWhiteSpace(input.TagName))
+            {
+                return FailResult(step, "标签名称不能为空。");
+            }
+
+            _logger.LogInformation("执行 GetTagByName，标签名：{TagName}", input.TagName);
+
+            // 调用服务层根据标签名模糊查询标签列表
+            var response = await _tagService.GetTagsByTagName(input.TagName);
+
+            // 如果查询失败或返回的标签列表为空，返回失败
+            if (!response.Success || response.Data is not List<Tag> tags || tags.Count == 0)
+            {
+                return FailResult(step, response.Message ?? $"没有找到标签「{input.TagName}」。");
+            }
+
+            // 优先精确匹配（不区分大小写），否则取第一个
+            var tag = tags.FirstOrDefault(t => string.Equals(t.Name, input.TagName, StringComparison.OrdinalIgnoreCase))
+                ?? tags.First();
+
+            // 构造输出对象，并填充关联的分类名称（通过缓存或数据库查询）
+            var output = new GetTagByNameOutput(tag);
+            await FillTagCategoryNameAsync(output);
+
+            // 返回成功结果
+            return SuccessResult(step, "标签查询成功", output);
+        }
+
+        // 执行 SearchArticlesByTag 动作：根据标签 ID（支持从前置步骤引用）查询文章列表
+        private async Task<AgentStepExecutionResult> ExecuteSearchArticlesByTagAsync(
+            AgentPlanStep step,
+            List<AgentStepExecutionResult> previousResults)
+        {
+            // 解析输入参数
+            var input = new SearchArticlesByTagInput
+            {
+                TagId = GetIntParam(step.Parameters, "tagId"),
+                TagIdFromStep = GetIntParam(step.Parameters, "tagIdFromStep"),
+                SortBy = GetEnumParam(step.Parameters, "sortBy", ArticleSortBy.Latest),
+                Top = GetIntParam(step.Parameters, "top", 10)
+            };
+
+            var tagName = string.Empty;
+
+            // 若 TagId 无效但 TagIdFromStep 有效，尝试从前置步骤结果中提取标签信息
+            if (input.TagId <= 0 && input.TagIdFromStep.GetValueOrDefault() > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.TagIdFromStep);
+                if (previousResult?.Data is GetTagByNameOutput tagOutput)
+                {
+                    input.TagId = tagOutput.TagId;
+                    tagName = tagOutput.TagName;
+                }
+            }
+
+            // 仍无法获取有效的标签 ID，返回失败
+            if (input.TagId <= 0)
+            {
+                return FailResult(step, "标签 ID 无效，无法查询标签文章。");
+            }
+
+            // 限制 Top 范围
+            input.Top = Math.Clamp(input.Top <= 0 ? 10 : input.Top, 1, 10);
+
+            _logger.LogInformation(
+                "执行 SearchArticlesByTag，标签ID：{TagId}，数量：{Top}，排序：{SortBy}",
+                input.TagId,
+                input.Top,
+                input.SortBy);
+
+            // 调用服务层按标签 ID 查询文章
+            var response = await _articleService.GetArticlesByTagIdAsync(input.TagId);
+            if (!response.Success || response.Data is not List<GetArticleListDTO> articleDtos)
+            {
+                return FailResult(step, response.Message ?? "按标签查询文章失败。");
+            }
+
+            // 若标签名尚未获取，则通过标签 ID 解析标签名
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                tagName = await ResolveTagNameAsync(input.TagId);
+            }
+
+            // 转换文章数据并应用排序和取 Top
+            var articles = ConvertArticleList(articleDtos);
+            var output = new SearchArticlesByTagOutput
+            {
+                TagId = input.TagId,
+                TagName = tagName,
+                SortBy = input.SortBy,
+                Articles = ApplyArticleSortAndTop(articles, input.SortBy, input.Top),
+                TotalCount = articles.Count
+            };
+
+            return SuccessResult(step, "按标签查询文章成功", output);
+        }
+
+        // 执行 GetTagsByCategoryId 动作：根据分类 ID（支持从前置步骤引用或分类名解析）查询该分类下的标签列表
+        private async Task<AgentStepExecutionResult> ExecuteGetTagsByCategoryIdAsync(
+            AgentPlanStep step,
+            List<AgentStepExecutionResult> previousResults)
+        {
+            // 解析输入参数：分类ID、引用步骤、分类名称
+            var input = new GetTagsByCategoryIdInput
+            {
+                CategoryId = GetIntParam(step.Parameters, "categoryId"),
+                CategoryIdFromStep = GetIntParam(step.Parameters, "categoryIdFromStep"),
+                CategoryName = GetStringParam(step.Parameters, "categoryName")
+            };
+
+            // 若分类ID无效但存在有效的引用步骤编号，尝试从前置步骤提取分类ID
+            if (input.CategoryId <= 0 && input.CategoryIdFromStep.GetValueOrDefault() > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.CategoryIdFromStep);
+                input.CategoryId = ExtractCategoryId(previousResult?.Data);
+            }
+
+            // 获取所有分类列表（用于按名称匹配）
+            var categories = await GetAllCategoryDtosAsync();
+            // 若分类ID仍无效但提供了分类名称，尝试按名称匹配分类
+            if (input.CategoryId <= 0 && !string.IsNullOrWhiteSpace(input.CategoryName))
+            {
+                input.CategoryId = categories
+                    .FirstOrDefault(c =>
+                        string.Equals(c.Name, input.CategoryName, StringComparison.OrdinalIgnoreCase) ||
+                        c.Name.Contains(input.CategoryName, StringComparison.OrdinalIgnoreCase))?.Id ?? 0;
+            }
+
+            // 无法确定有效的分类ID，返回失败
+            if (input.CategoryId <= 0)
+            {
+                return FailResult(step, "分类 ID 无效，无法查询分类标签。");
+            }
+
+            _logger.LogInformation("执行 GetTagsByCategoryId，分类ID：{CategoryId}", input.CategoryId);
+
+            // 调用服务层查询该分类下的标签列表
+            var response = await _tagService.GetTagsByCategoryIdAsync(input.CategoryId);
+            var tags = response.Data as List<Tag> ?? new List<Tag>();
+
+            // 若服务层返回失败且错误信息不是"没有找到任何标签"，则返回失败
+            if (!response.Success && !string.Equals(response.Message, "没有找到任何标签", StringComparison.OrdinalIgnoreCase))
+            {
+                return FailResult(step, response.Message ?? "查询分类标签失败。");
+            }
+
+            // 获取分类详情用于输出
+            var category = categories.FirstOrDefault(c => c.Id == input.CategoryId);
+            var output = new GetTagsByCategoryIdOutput
+            {
+                CategoryId = input.CategoryId,
+                CategoryName = category?.Name ?? input.CategoryName,
+                CategoryDescription = category?.Description ?? string.Empty,
+                Tags = tags.Select(tag => new TagItem(tag)).ToList()
+            };
+
+            // 返回成功结果
+            return SuccessResult(step, "分类标签查询成功", output);
+        }
+
+        // 执行 RecommendCategory 动作：根据文章内容（支持直接传入或从前置步骤引用），调用 AI 推荐最合适的分类
+        private async Task<AgentStepExecutionResult> ExecuteRecommendCategoryAsync(
+            AgentPlanStep step,
+            List<AgentStepExecutionResult> previousResults)
+        {
+            // 解析输入参数
+            var input = new RecommendCategoryInput
+            {
+                Content = GetStringParam(step.Parameters, "content"),
+                ContentFromStep = GetIntParam(step.Parameters, "contentFromStep"),
+                Title = GetStringParam(step.Parameters, "title")
+            };
+
+            // 若未直接提供内容，且存在有效的引用步骤，则从前置步骤提取正文
+            if (string.IsNullOrWhiteSpace(input.Content) && input.ContentFromStep.GetValueOrDefault() > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.ContentFromStep);
+                if (previousResult?.Data != null)
+                {
+                    input.Content = ExtractContentText(previousResult.Data);
+                }
+            }
+
+            // 无法获取正文内容，返回失败
+            if (string.IsNullOrWhiteSpace(input.Content))
+            {
+                return FailResult(step, "推荐分类需要提供正文内容。");
+            }
+
+            // 获取系统所有可用分类
+            var categories = await GetAllCategoryDtosAsync();
+            if (categories.Count == 0)
+            {
+                return FailResult(step, "当前系统没有可用分类，无法推荐。");
+            }
+
+            // 构造分类列表文本，供 AI 参考
+            var categoryText = string.Join("\n", categories.Select(c => $"{c.Id}. {c.Name}：{c.Description}"));
+
+            // 构造 AI 对话：系统提示限定输出格式，用户消息包含可用分类和文章信息
+            var messages = new List<ChatMessage>
+            {
+                new(
+                    ChatRole.System,
+                    """
+                    你是博客分类推荐器。
+                    只能从给定分类列表中选择一个最合适的分类。
+                    只输出 JSON，不要输出 Markdown。
+                    JSON 格式：
+                    {
+                      "recommendedCategoryId": 1,
+                      "recommendedCategoryName": "分类名",
+                      "confidence": 0.8,
+                      "reason": "推荐理由"
+                    }
+                    """),
+                new(
+                    ChatRole.User,
+                    $"""
+                    可用分类：
+                    {categoryText}
+
+                    标题：
+                    {input.Title}
+
+                    正文：
+                    {input.Content}
+                    """)
+            };
+
+            // 调用 AI 获取推荐结果
+            var response = await _chatClient.GetResponseAsync(
+                messages,
+                new ChatOptions { MaxOutputTokens = AgentTokenBudget.FinalAnswerMaxOutputTokens });
+
+            var rawText = response.Messages
+                .Where(message => message.Role == ChatRole.Assistant)
+                .Select(message => message.Text)
+                .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+
+            // 尝试从 AI 回复中解析 JSON 格式的推荐结果
+            if (!TryDeserializeAiJson<RecommendCategoryOutput>(rawText, out var output) || output == null)
+            {
+                return FailResult(step, "AI 未能生成有效的分类推荐结果。");
+            }
+
+            // 根据 AI 推荐的 ID 或名称匹配系统中的实际分类
+            var matchedCategory = categories.FirstOrDefault(c => c.Id == output.RecommendedCategoryId)
+                ?? categories.FirstOrDefault(c => string.Equals(c.Name, output.RecommendedCategoryName, StringComparison.OrdinalIgnoreCase));
+
+            // 若 AI 推荐的分类不在系统中，返回失败
+            if (matchedCategory == null)
+            {
+                return FailResult(step, "AI 推荐的分类不在系统分类列表中。");
+            }
+
+            // 修正输出中的分类 ID 和名称，确保与系统一致，并限制置信度范围
+            output.RecommendedCategoryId = matchedCategory.Id;
+            output.RecommendedCategoryName = matchedCategory.Name;
+            output.Confidence = Math.Clamp(output.Confidence, 0, 1);
+
+            // 返回成功结果
+            return SuccessResult(step, "分类推荐成功", output);
+        }
+
+        // 执行 RecommendTags 动作：根据文章内容（支持直接传入或从前置步骤引用）和已有标签，使用 AI 推荐文章标签
+        private async Task<AgentStepExecutionResult> ExecuteRecommendTagsAsync(
+            AgentPlanStep step,
+            List<AgentStepExecutionResult> previousResults)
+        {
+            // 解析输入参数
+            var input = new RecommendTagsInput
+            {
+                Content = GetStringParam(step.Parameters, "content"),
+                ContentFromStep = GetIntParam(step.Parameters, "contentFromStep"),
+                Title = GetStringParam(step.Parameters, "title"),
+                ExistingTags = GetStringListParam(step.Parameters, "existingTags")
+            };
+
+            // 若未直接提供内容，且存在有效的引用步骤，则从前置步骤提取正文
+            if (string.IsNullOrWhiteSpace(input.Content) && input.ContentFromStep.GetValueOrDefault() > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.ContentFromStep);
+                if (previousResult?.Data != null)
+                {
+                    input.Content = ExtractContentText(previousResult.Data);
+                }
+            }
+
+            // 无法获取正文内容，返回失败
+            if (string.IsNullOrWhiteSpace(input.Content))
+            {
+                return FailResult(step, "推荐标签需要提供正文内容。");
+            }
+
+            // 获取系统所有已有标签
+            var allTagsResponse = await _tagService.GetAllTagsAsync();
+            var allTags = allTagsResponse.Data as List<GetTagDTO> ?? new List<GetTagDTO>();
+            var tagText = allTags.Count == 0
+                ? "当前没有已有标签，可直接生成新标签建议。"
+                : string.Join("、", allTags.Select(t => t.Name));
+
+            // 构造 AI 对话：系统提示限定输出格式，用户消息包含已有标签和文章信息
+            var messages = new List<ChatMessage>
+            {
+                new(
+                    ChatRole.System,
+                    """
+                    你是博客标签推荐器。
+                    请根据标题和正文推荐 3 到 5 个标签。
+                    优先使用已有标签；确实没有合适标签时，可以给出新标签建议。
+                    只输出 JSON，不要输出 Markdown。
+                    JSON 格式：
+                    {
+                      "tags": [
+                        { "tagName": "标签名", "confidence": 0.8, "reason": "推荐理由" }
+                      ]
+                    }
+                    """),
+                new(
+                    ChatRole.User,
+                    $"""
+                    已有标签：
+                    {tagText}
+
+                    用户指定已有标签参考：
+                    {string.Join("、", input.ExistingTags)}
+
+                    标题：
+                    {input.Title}
+
+                    正文：
+                    {input.Content}
+                    """)
+            };
+
+            // 调用 AI 获取推荐结果
+            var response = await _chatClient.GetResponseAsync(
+                messages,
+                new ChatOptions { MaxOutputTokens = AgentTokenBudget.FinalAnswerMaxOutputTokens });
+
+            var rawText = response.Messages
+                .Where(message => message.Role == ChatRole.Assistant)
+                .Select(message => message.Text)
+                .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+
+            // 尝试从 AI 回复中解析 JSON 格式的推荐结果
+            if (!TryDeserializeAiJson<RecommendTagsOutput>(rawText, out var output) || output == null)
+            {
+                return FailResult(step, "AI 未能生成有效的标签推荐结果。");
+            }
+
+            // 过滤空标签名、限制数量、规范化置信度
+            output.Tags = output.Tags
+                .Where(tag => !string.IsNullOrWhiteSpace(tag.TagName))
+                .Take(5)
+                .Select(tag =>
+                {
+                    tag.Confidence = Math.Clamp(tag.Confidence, 0, 1);
+                    return tag;
+                })
+                .ToList();
+
+            // 返回成功结果
+            return SuccessResult(step, "标签推荐成功", output);
+        }
+
+        // 执行 CreateArticle 动作：创建新文章，支持 AI 生成草稿（标题、正文、摘要），需要封面图和分类
+        private async Task<AgentStepExecutionResult> ExecuteCreateArticleAsync(
+            AgentPlanStep step,
+            int userId,
+            List<AgentStepExecutionResult> previousResults)
+        {
+            // 解析输入参数
+            var input = new CreateArticleInput
+            {
+                Title = GetStringParam(step.Parameters, "title"),
+                Content = GetStringParam(step.Parameters, "content"),
+                Summary = GetStringParam(step.Parameters, "summary"),
+                CategoryId = GetIntParam(step.Parameters, "categoryId"),
+                CategoryIdFromStep = GetIntParam(step.Parameters, "categoryIdFromStep"),
+                CategoryName = GetStringParam(step.Parameters, "categoryName"),
+                TagIds = GetIntListParam(step.Parameters, "tagIds"),
+                Description = GetStringParam(step.Parameters, "description"),
+                CoverUrl = GetStringParam(step.Parameters, "coverUrl")
+            };
+
+            // 若分类ID无效且存在引用步骤，则从前置步骤提取分类ID
+            if (input.CategoryId <= 0 && input.CategoryIdFromStep.GetValueOrDefault() > 0)
+            {
+                var previousResult = previousResults.FirstOrDefault(r => r.StepNumber == input.CategoryIdFromStep);
+                input.CategoryId = ExtractCategoryId(previousResult?.Data);
+            }
+
+            // 获取所有分类，用于按名称匹配
+            var categories = await GetAllCategoryDtosAsync();
+            if (input.CategoryId <= 0 && !string.IsNullOrWhiteSpace(input.CategoryName))
+            {
+                input.CategoryId = categories
+                    .FirstOrDefault(c =>
+                        string.Equals(c.Name, input.CategoryName, StringComparison.OrdinalIgnoreCase) ||
+                        c.Name.Contains(input.CategoryName, StringComparison.OrdinalIgnoreCase))?.Id ?? 0;
+            }
+
+            // 无法确定分类ID则失败
+            if (input.CategoryId <= 0)
+            {
+                return FailResult(step, "发布文章需要提供有效分类。");
+            }
+
+            // 若未提供标题/正文/摘要，且没有生成方向 Description，则失败
+            if (string.IsNullOrWhiteSpace(input.Description) &&
+                (string.IsNullOrWhiteSpace(input.Title) || string.IsNullOrWhiteSpace(input.Content)))
+            {
+                return FailResult(step, "发布文章需要提供文章内容，或提供生成文章方向 Description。");
+            }
+
+            // 若标题、正文、摘要任一缺失，尝试调用 AI 生成草稿
+            if (string.IsNullOrWhiteSpace(input.Title) ||
+                string.IsNullOrWhiteSpace(input.Content) ||
+                string.IsNullOrWhiteSpace(input.Summary))
+            {
+                var draft = await GenerateArticleDraftAsync(input);
+                if (draft == null)
+                {
+                    return FailResult(step, "AI 未能生成可发布的文章草稿。");
+                }
+
+                // 用生成的草稿填充缺失字段
+                input.Title = string.IsNullOrWhiteSpace(input.Title) ? draft.Title : input.Title;
+                input.Content = string.IsNullOrWhiteSpace(input.Content) ? draft.Content : input.Content;
+                input.Summary = string.IsNullOrWhiteSpace(input.Summary) ? draft.Summary : input.Summary;
+            }
+
+            // 对生成草稿做内容风险检测
+            var riskDetectionResult = await _paramRiskService.ValidateCreateArticleContent(input.Title, input.Summary, input.Content);
+
+            if (riskDetectionResult.Errors.Count != 0)
+            {
+                var error = riskDetectionResult.Errors.First();
+                return FailResult(step, error);
+            }
+
+            // 如果用户没有传入封面图，则使用默认封面图
+            if (string.IsNullOrWhiteSpace(input.CoverUrl))
+            {
+                input.CoverUrl = AgentDefaultCoverUrl;
+            }
+
+            var category = categories.FirstOrDefault(c => c.Id == input.CategoryId);
+            _logger.LogInformation("执行 CreateArticle，用户ID：{UserId}，标题：{Title}，分类ID：{CategoryId}", userId, input.Title, input.CategoryId);
+
+            // 构造发布 DTO
+            var publishDto = new PublishArticleDTO(
+                input.Title,
+                input.Summary,
+                input.Content,
+                input.CategoryId,
+                input.TagIds,
+                input.CoverUrl);
+
+            // 调用服务层发布文章
+            var response = await _articleService.PublishArticleAsync(publishDto, userId);
+            if (!response.Success || response.Data is not int articleId)
+            {
+                return FailResult(step, response.Message ?? "发布文章失败。");
+            }
+
+            // 构造成功输出
+            var output = new CreateArticleOutput
+            {
+                ArticleId = articleId,
+                Title = input.Title,
+                CategoryName = category?.Name ?? input.CategoryName,
+                CreatedAt = DateTime.Now,
+                ContentLength = input.Content.Length
+            };
+
+            return SuccessResult(step, "文章发布成功", output);
+        }
+
         //  ====================       以下是辅助方法       ====================
 
         // 快速生成失败结果
@@ -1805,6 +2423,22 @@ namespace CuteBlogSystem.Service
                 Action = step.Action,
                 Success = false,
                 Message = message
+            };
+        }
+
+        // 快速生成成功结果，并统一收集输出中的记忆事实
+        private AgentStepExecutionResult SuccessResult(AgentPlanStep step, string message, object data)
+        {
+            return new AgentStepExecutionResult
+            {
+                StepNumber = step.StepNumber,
+                Action = step.Action,
+                Success = true,
+                Message = message,
+                Data = data,
+                MemoryFacts = data is IAgentMemoryFactProvider provider
+                    ? provider.GetMemoryFacts(step.Action).ToList()
+                    : new List<AgentMemoryFact>()
             };
         }
 
@@ -1862,11 +2496,11 @@ namespace CuteBlogSystem.Service
                 AgentActionRegistry.GenerateContentRevision
             };
 
-            // 如果执行结果是单一成功步骤且行为为自然语言类型，直接将其 Data 转为文本返回
             var successfulDataSteps = stepResults
                 .Where(result => result.Success && result.Data != null)
                 .ToList();
 
+            // 如果执行结果是单一成功步骤且行为为自然语言类型，直接将其 Data 转为文本返回
             if (successfulDataSteps.Count == 1)
             {
                 if (naturalLanguageActions.Contains(lastSuccessStep.Action))
@@ -1897,6 +2531,11 @@ namespace CuteBlogSystem.Service
                     6. 回答必须与用户目标一致。
                     7. 如果工具结果中同时包含文章查询结果和文章总结结果，回答时必须先说明查询到的文章标题、分类、点赞量等信息，再给出总结内容。
                     8. 不要只返回最后一步总结结果，必须融合前面步骤中与用户目标相关的信息。
+                    9. 如果工具结果中包含已经编号的文章列表：
+                       必须严格保留原编号和原顺序；
+                       不得按相关性、标题、分类、点赞数、浏览量重新排序；
+                       不得省略文章 ID；
+                       用户后续说“第 N 篇”时，将以这个编号为准。
                     """),
 
                 new(
@@ -1976,6 +2615,347 @@ namespace CuteBlogSystem.Service
             return AiChatHelper.GetInt(parameters, key, defaultValue);
         }
 
+        // 安全地从参数字典中获取枚举值，兼容字符串和 JsonElement
+        private static TEnum GetEnumParam<TEnum>(
+            Dictionary<string, object> parameters,
+            string key,
+            TEnum defaultValue)
+            where TEnum : struct, System.Enum
+        {
+            var value = GetStringParam(parameters, key);
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return defaultValue;
+            }
+
+            return System.Enum.TryParse<TEnum>(value, ignoreCase: true, out var result)
+                ? result
+                : defaultValue;
+        }
+
+        // 安全地从参数字典中获取整数列表，兼容 JSON 数组和逗号分隔字符串
+        private static List<int> GetIntListParam(Dictionary<string, object> parameters, string key)
+        {
+            if (!parameters.TryGetValue(key, out var value) || value == null)
+            {
+                return new List<int>();
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.Array)
+                {
+                    return element.EnumerateArray()
+                        .Select(item => item.ValueKind == JsonValueKind.Number && item.TryGetInt32(out var number)
+                            ? number
+                            : int.TryParse(item.ToString(), out var parsed) ? parsed : 0)
+                        .Where(number => number > 0)
+                        .Distinct()
+                        .ToList();
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return ParseIntListText(element.GetString());
+                }
+            }
+
+            if (value is IEnumerable<int> intValues)
+            {
+                return intValues.Where(number => number > 0).Distinct().ToList();
+            }
+
+            if (value is IEnumerable<object> objectValues)
+            {
+                return objectValues
+                    .Select(item => int.TryParse(item?.ToString(), out var parsed) ? parsed : 0)
+                    .Where(number => number > 0)
+                    .Distinct()
+                    .ToList();
+            }
+
+            return ParseIntListText(value.ToString());
+        }
+
+        // 安全地从参数字典中获取字符串列表，兼容 JSON 数组和逗号分隔字符串
+        private static List<string> GetStringListParam(Dictionary<string, object> parameters, string key)
+        {
+            if (!parameters.TryGetValue(key, out var value) || value == null)
+            {
+                return new List<string>();
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.Array)
+                {
+                    return element.EnumerateArray()
+                        .Select(item => item.ToString().Trim())
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return ParseStringListText(element.GetString());
+                }
+            }
+
+            if (value is IEnumerable<string> stringValues)
+            {
+                return stringValues
+                    .Select(text => text.Trim())
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            return ParseStringListText(value.ToString());
+        }
+
+        // 将逗号分隔的文本解析为整数列表
+        private static List<int> ParseIntListText(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return new List<int>();
+            }
+
+            return text
+                .Split(new[] { ',', '，', ';', '；', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(item => int.TryParse(item.Trim(), out var parsed) ? parsed : 0)
+                .Where(number => number > 0)
+                .Distinct()
+                .ToList();
+        }
+
+        // 将逗号分隔的文本解析为字符串列表
+        private static List<string> ParseStringListText(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return new List<string>();
+            }
+
+            return text
+                .Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(item => item.Trim())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        // 将文章列表 DTO 转换为 Agent 统一使用的文章结果项
+        private static List<ArticleSearchResultItem> ConvertArticleList(List<GetArticleListDTO> articleDtos)
+        {
+            return articleDtos
+                .Select(article => new ArticleSearchResultItem(article))
+                .ToList();
+        }
+
+        // 根据排序方式和数量限制处理文章结果
+        private static List<ArticleSearchResultItem> ApplyArticleSortAndTop(
+            List<ArticleSearchResultItem> articles,
+            ArticleSortBy sortBy,
+            int top)
+        {
+            var sorted = sortBy switch
+            {
+                ArticleSortBy.MostLiked => articles
+                    .OrderByDescending(article => article.LikeCount)
+                    .ThenByDescending(article => article.Id),
+
+                ArticleSortBy.MostViewed => articles
+                    .OrderByDescending(article => article.ViewCount)
+                    .ThenByDescending(article => article.Id),
+
+                _ => articles
+                    .OrderByDescending(article => article.Id)
+            };
+
+            return sorted
+                .Take(Math.Clamp(top <= 0 ? 10 : top, 1, 10))
+                .ToList();
+        }
+
+        // 查询全部分类 DTO，失败时返回空列表
+        private async Task<List<GetCategoryDTO>> GetAllCategoryDtosAsync()
+        {
+            var response = await _categoryService.GetAllCategoriesAsync();
+            return response.Data as List<GetCategoryDTO> ?? new List<GetCategoryDTO>();
+        }
+
+        // 为标签输出补齐分类名称
+        private async Task FillTagCategoryNameAsync(GetTagByNameOutput output)
+        {
+            if (output.CategoryId <= 0)
+            {
+                return;
+            }
+
+            var categories = await GetAllCategoryDtosAsync();
+            output.CategoryName = categories
+                .FirstOrDefault(category => category.Id == output.CategoryId)?.Name
+                ?? output.CategoryName;
+        }
+
+        // 根据标签 ID 解析标签名称，解析失败时返回空字符串
+        private async Task<string> ResolveTagNameAsync(int tagId)
+        {
+            var response = await _tagService.GetAllTagsAsync();
+            var tags = response.Data as List<GetTagDTO> ?? new List<GetTagDTO>();
+            return tags.FirstOrDefault(tag => tag.Id == tagId)?.Name ?? string.Empty;
+        }
+
+        // 从前置步骤结果中提取分类 ID
+        private static int ExtractCategoryId(object? data)
+        {
+            if (data is RecommendCategoryOutput recommendCategory)
+            {
+                return recommendCategory.RecommendedCategoryId;
+            }
+
+            if (data is GetTagsByCategoryIdOutput categoryTags)
+            {
+                return categoryTags.CategoryId;
+            }
+
+            var text = data == null ? string.Empty : ConvertObjectToText(data);
+            var patterns = new[]
+            {
+                @"分类ID[:：]\s*(\d+)",
+                @"""categoryId""\s*:\s*(\d+)",
+                @"""CategoryId""\s*:\s*(\d+)",
+                @"""recommendedCategoryId""\s*:\s*(\d+)",
+                @"""RecommendedCategoryId""\s*:\s*(\d+)"
+            };
+
+            foreach (var pattern in patterns)
+            {
+                var match = Regex.Match(text, pattern);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var id))
+                {
+                    return id;
+                }
+            }
+
+            return 0;
+        }
+
+        // 尝试解析 AI 返回的 JSON，兼容 Markdown 代码块包裹
+        private static bool TryDeserializeAiJson<T>(string? rawText, out T? result)
+        {
+            result = default;
+
+            if (string.IsNullOrWhiteSpace(rawText))
+            {
+                return false;
+            }
+
+            var json = rawText.Trim();
+            if (json.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                json = json.Replace("```json", "", StringComparison.OrdinalIgnoreCase).Replace("```", "").Trim();
+            }
+            else if (json.StartsWith("```"))
+            {
+                json = json.Replace("```", "").Trim();
+            }
+
+            var start = json.IndexOf('{');
+            var end = json.LastIndexOf('}');
+            if (start >= 0 && end > start)
+            {
+                json = json[start..(end + 1)];
+            }
+
+            try
+            {
+                result = JsonSerializer.Deserialize<T>(
+                    json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return result != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // 调用 AI 根据用户提供的方向和已有内容生成完整的文章草稿（标题、摘要、正文）
+        private async Task<CreateArticleInput?> GenerateArticleDraftAsync(CreateArticleInput input)
+        {
+            // 构造 AI 对话消息：系统提示指定输出 JSON 格式，用户消息包含文章方向和已有字段
+            var messages = new List<ChatMessage>
+            {
+                new(
+                    ChatRole.System,
+                    """
+                    你是博客文章草稿生成器。
+                    请根据用户给出的方向生成可发布的博客草稿。
+                    只输出 JSON，不要输出 Markdown。
+                    JSON 格式：
+                    {
+                      "title": "不超过30字的标题",
+                      "summary": "不超过200字的摘要",
+                      "content": "完整正文"
+                    }
+                    """),
+                new(
+                    ChatRole.User,
+                    $"""
+                    文章方向：
+                    {input.Description}
+
+                    已有标题：
+                    {input.Title}
+
+                    已有摘要：
+                    {input.Summary}
+
+                    已有正文：
+                    {input.Content}
+                    """)
+            };
+
+            // 调用 AI 生成草稿，限制输出 Token 数
+            var response = await _chatClient.GetResponseAsync(
+                messages,
+                new ChatOptions { MaxOutputTokens = AgentTokenBudget.FinalAnswerMaxOutputTokens });
+
+            // 提取助手的回复文本
+            var rawText = response.Messages
+                .Where(message => message.Role == ChatRole.Assistant)
+                .Select(message => message.Text)
+                .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+
+            // 尝试从 AI 回复中解析 JSON 格式的草稿
+            if (!TryDeserializeAiJson<CreateArticleInput>(rawText, out var draft) || draft == null)
+            {
+                return null;
+            }
+
+            // 去除各字段首尾空白
+            draft.Title = draft.Title.Trim();
+            draft.Summary = draft.Summary.Trim();
+            draft.Content = draft.Content.Trim();
+
+            // 标题超过30字则截断
+            if (draft.Title.Length > 30)
+            {
+                draft.Title = draft.Title[..30];
+            }
+
+            // 任一字段为空则视为生成失败
+            return string.IsNullOrWhiteSpace(draft.Title) ||
+                   string.IsNullOrWhiteSpace(draft.Summary) ||
+                   string.IsNullOrWhiteSpace(draft.Content)
+                ? null
+                : draft;
+        }
+
         // 从对象文本中提取第一个出现的文章ID，匹配中文提示或JSON属性
         private static int ExtractFirstArticleId(object data)
         {
@@ -2021,7 +3001,8 @@ namespace CuteBlogSystem.Service
 
             return JsonSerializer.Serialize(data, new JsonSerializerOptions
             {
-                WriteIndented = true
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
         }
 

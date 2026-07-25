@@ -4,6 +4,7 @@ using CuteBlogSystem.Config;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CuteBlogSystem.Migrations
 {
     [DbContext(typeof(MyDbContext))]
-    partial class MyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721072638_AddUserLongTermMemories")]
+    partial class AddUserLongTermMemories
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -828,10 +831,9 @@ namespace CuteBlogSystem.Migrations
                     b.Property<DateTime?>("LastDecayAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<byte>("MemoryGroup")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint")
-                        .HasDefaultValue((byte)0);
+                    b.Property<string>("MemoryGroup")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("MemoryKey")
                         .HasMaxLength(255)
@@ -857,8 +859,8 @@ namespace CuteBlogSystem.Migrations
                         .HasColumnType("rowversion");
 
                     b.Property<string>("SourceAction")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<long?>("SourceMessageId")
                         .HasColumnType("bigint");

@@ -150,6 +150,70 @@ namespace CuteBlogSystem.Service
                     - 如果用户说“第三篇文章”“第二个结果”，不要直接猜 articleId，必须通过 SelectArticleFromList 选中。
                     - 如果用户说“Redis 那篇”，也不要直接猜 articleId，应通过 SelectArticleFromList 按标题选择。
 
+                14. SearchArticlesByKeyword
+                    用于按关键词从标题、分类、标签、正文或全部范围中搜索文章。
+                    参数：
+                    - queryText：查询关键词，不能为空。
+                    - searchScope：只能是 ByTitle、ByCategory、ByContent、ByTag、ByAll，默认 ByAll。
+                    - articleScope：只能是 All 或 My，默认 All；用户说“我的文章”时使用 My。
+                    - sortBy：只能是 Latest、MostLiked、MostViewed。
+                    - top：返回数量，1 到 10。
+                    注意：
+                    - 用户说“找一下包含 Redis 的文章”“搜索标题里有安全的文章”时优先使用该动作。
+                    - 如果搜索结果有多篇，后续要操作某一篇时仍然必须先使用 SelectArticleFromList。
+
+                15. GetTagByName
+                    用于根据标签名称或关键词查找标签信息。
+                    参数：
+                    - tagName：标签名称或关键词。
+                    注意：
+                    - 当用户按标签查文章但只提供标签名时，先使用 GetTagByName，再使用 SearchArticlesByTag。
+
+                16. SearchArticlesByTag
+                    用于根据标签 ID 查询文章。
+                    参数：
+                    - tagId 或 tagIdFromStep：标签 ID 或从 GetTagByName 结果中获取标签 ID。
+                    - sortBy：只能是 Latest、MostLiked、MostViewed。
+                    - top：返回数量，1 到 10。
+
+                17. GetTagsByCategoryId
+                    用于查询某个分类下有哪些标签。
+                    参数：
+                    - categoryId、categoryIdFromStep 或 categoryName 至少提供一个。
+                    注意：
+                    - 用户问“技术分类下有哪些标签”“某分类可以用什么标签”时使用。
+
+                18. RecommendCategory
+                    用于根据文章标题和正文推荐已有分类。
+                    参数：
+                    - content 或 contentFromStep：正文内容或正文来源步骤。
+                    - title：可选标题。
+                    注意：
+                    - 推荐分类只读，不会修改数据库。
+
+                19. RecommendTags
+                    用于根据文章标题和正文推荐标签。
+                    参数：
+                    - content 或 contentFromStep：正文内容或正文来源步骤。
+                    - title：可选标题。
+                    - existingTags：可选，用户指定的已有标签参考。
+                    注意：
+                    - 推荐标签只读，不会新增标签或修改数据库。
+
+                20. CreateArticle
+                    用于发布新文章。
+                    参数：
+                    - title：文章标题，不超过 30 字。
+                    - summary：文章摘要。
+                    - content：文章正文。
+                    - categoryId、categoryIdFromStep 或 categoryName：文章分类。
+                    - tagIds：标签 ID 列表，可为空。
+                    - description：当 title/content/summary 不完整时，用于生成文章草稿。
+                    - coverUrl：封面临时路径，必须由用户先上传封面后提供。
+                    注意：
+                    - 该动作属于写操作，执行前系统会要求用户确认。
+                    - 当前 Agent 不能自动上传封面，没有 coverUrl 时不要编造，但仍应生成 CreateArticle，由后续校验层提示用户提供封面。
+                    - 如果用户只是让你“帮我写一篇草稿”，不要使用 CreateArticle，应使用直接聊天或 GenerateContentRevision。
 
                 你必须只输出 JSON，不要输出 Markdown，不要输出解释文字。
                 JSON 格式必须严格如下：
@@ -175,6 +239,15 @@ namespace CuteBlogSystem.Service
                 - 如果用户要求“最新文章”，sortBy 使用 Latest。
                 - 如果用户要求“点赞最高、点赞最多、最受欢迎”，sortBy 使用 MostLiked。
                 - 如果用户要求“浏览量最高、浏览最多、访问量最高”，sortBy 使用 MostViewed。
+                - 用户要求按关键词、标题、正文、标签、分类进行模糊搜索时，优先使用 SearchArticlesByKeyword。
+                - 用户要求“按标签查文章”且只给出标签名时，先 GetTagByName，再 SearchArticlesByTag(tagIdFromStep=...)。
+                - 用户问某分类下有哪些标签时，使用 GetTagsByCategoryId，不要用 SearchArticlesByCategory。
+                - 用户给出一篇待发布文章并要求推荐分类时，使用 RecommendCategory。
+                - 用户给出一篇待发布文章并要求推荐标签时，使用 RecommendTags。
+                - 用户明确要求发布新文章时，应使用 CreateArticle。
+                - 如果用户给了分类名称但没有分类 ID，可以把 categoryName 填为用户给出的分类名称。
+                - 如果用户只给了文章主题但没有标题、正文、摘要，可以把 description 填为用户的发布主题，让 CreateArticle 在执行期生成草稿。
+                - 如果用户没有提供 coverUrl，不要编造 coverUrl，但仍然生成 CreateArticle，让 Validator / Risk 层返回“发布文章前必须提供 coverUrl”的可读错误。
                 - 如果用户指定的分类名称明显可能不存在、不确定，或者用户输入中包含“不存在分类”“不存在的分类”“没有的分类”等表达，
                   不要只生成 SearchArticlesByCategory。
                   必须生成三步计划：
@@ -266,6 +339,19 @@ namespace CuteBlogSystem.Service
                 - “文章中如何解释 var？” → AnswerQuestionFromContent
                 - “有没有介绍变量？” → AnswerQuestionFromContent
                 - “介绍了哪些流程控制语句？” → AnswerQuestionFromContent
+                - “搜索一下标题包含 Redis 的文章”
+                  → Step 1: SearchArticlesByKeyword，queryText = "Redis"，searchScope = ByTitle，articleScope = All，sortBy = Latest，top = 10
+                - “查一下我的文章里有没有安全相关内容”
+                  → Step 1: SearchArticlesByKeyword，queryText = "安全"，searchScope = ByAll，articleScope = My，sortBy = Latest，top = 10
+                - “查一下 Redis 标签下的文章”
+                  → Step 1: GetTagByName，tagName = "Redis"
+                  → Step 2: SearchArticlesByTag，tagIdFromStep = 1，sortBy = Latest，top = 10
+                - “技术分类下有哪些标签”
+                  → Step 1: GetTagsByCategoryId，categoryName = "技术"
+                - “根据这篇文章内容推荐分类：xxx”
+                  → Step 1: RecommendCategory，content = "xxx"
+                - “根据这篇文章内容推荐标签：xxx”
+                  → Step 1: RecommendTags，content = "xxx"
                 - “帮我查找不存在分类下点赞最高的一篇文章”
                   → Step 1: SearchArticlesByCategory，categoryName = "不存在分类"，sortBy = MostLiked，top = 1
                   → Step 2: GetAllCategories
@@ -275,6 +361,9 @@ namespace CuteBlogSystem.Service
                   → Step 1: SearchArticlesByCategory，categoryName = "火星农业技术"，sortBy = Latest，top = 1
                   → Step 2: GetAllCategories
                   → Step 3: ExplainFailureWithSuggestions，failureFromStep = 1，categoriesFromStep = 2
+
+                - “帮我发布一篇关于 C# 委托的文章到技术分类”
+                  → Step 1: CreateArticle，categoryName = "技术"，description = "关于 C# 委托的文章"，coverUrl = ""
 
                 禁止把具体知识点问答转换成全文总结。
                 只要问题能够针对文章中的某个局部内容作答，就必须使用 AnswerQuestionFromContent。

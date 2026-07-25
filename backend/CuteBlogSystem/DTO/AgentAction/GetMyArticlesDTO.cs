@@ -31,9 +31,9 @@ namespace CuteBlogSystem.DTO.AgentAction
             }
 
             var lines = Articles.Select((article, index) =>
-                $"{index + 1}. 《{article.Title}》 分类：{article.CategoryName}，点赞：{article.LikeCount}，浏览：{article.ViewCount}，ID：{article.Id}");
+                $"{index + 1}. 《{article.Title}》 ID：{article.Id}，分类：{article.CategoryName}，点赞：{article.LikeCount}，浏览：{article.ViewCount}，ID：{article.Id}");
 
-            return $"用户共发布 {TotalCount} 篇文章，本次返回 {Articles.Count} 篇：\n" + string.Join("\n", lines);
+            return $"您一共发布了 {TotalCount} 篇文章，本次返回 {Articles.Count} 篇：\n" + string.Join("\n", lines);
         }
 
         public int? GetPrimaryArticleId()

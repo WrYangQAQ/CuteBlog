@@ -49,10 +49,11 @@ namespace CuteBlogSystem.Repository
         }
 
         // 添加文章
-        public async Task AddArticleAsync(Article article)
+        public async Task<Article> AddArticleAsync(Article article)
         {
             _dbContext.Articles.Add(article);
             await _dbContext.SaveChangesAsync();
+            return article;
         }
 
         // 删除文章

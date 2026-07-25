@@ -1,6 +1,8 @@
 ﻿using CuteBlogSystem.AI.Planner;
 using CuteBlogSystem.DTO.Agent;
-using CuteBlogSystem.Util;
+using CuteBlogSystem.Helper;
+using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 namespace CuteBlogSystem.Service
 {
@@ -15,6 +17,17 @@ namespace CuteBlogSystem.Service
         private const int SuspiciouslyShortContentLength = 20;   // 低于此长度极像误覆盖
         private const int RiskLargePageSize = 100;               // 超过此数量视为批量拉取风险
         private const int RiskLargeTopCount = 50;                // 查询前N条超过此值视为风险
+
+        private readonly IChatClient _chatClient;
+        private readonly ILogger<AgentParameterRiskService> _logger;
+
+        public AgentParameterRiskService(
+            IChatClient chatClient,
+            ILogger<AgentParameterRiskService> logger)
+        {
+            _chatClient = chatClient;
+            _logger = logger;
+        }
 
         // 危险内容修订指令列表
         private static readonly string[] DangerousContentRevisionInstructions =
@@ -74,6 +87,15 @@ namespace CuteBlogSystem.Service
                         DetectGenerateContentRevisionRisks(step, errors);
                         break;
 
+                    case AgentActionRegistry.SearchArticlesByKeyword:
+                    case AgentActionRegistry.SearchArticlesByTag:
+                        DetectSearchPaginationRisks(step, errors);
+                        break;
+
+                    case AgentActionRegistry.CreateArticle:
+                        DetectCreateArticleRisks(step, errors);
+                        break;
+
                     default:
                         // 其他Action不进行风险检测
                         break;
@@ -120,14 +142,78 @@ namespace CuteBlogSystem.Service
                 : AgentParameterRiskResult.Unsafe(errors);
         }
 
+        // 验证执行时AI创建文章的正文是否具有风险性内容
+        public async Task<AgentParameterRiskResult> ValidateCreateArticleContent(string? title, string? summary, string? content)
+        {
+            // 所有字段都为空时视为安全
+            if (string.IsNullOrWhiteSpace(title)
+                && string.IsNullOrWhiteSpace(summary)
+                && string.IsNullOrWhiteSpace(content))
+            {
+                return AgentParameterRiskResult.Safe();
+            }
+
+            try
+            {
+                // 构建待检测的完整文本（包含标题、摘要、正文）
+                var fullText = BuildFullContent(title, summary, content);
+
+                // 构建 AI 检测提示
+                var messages = new List<ChatMessage>
+                {
+                    new ChatMessage(
+                        ChatRole.System,
+                        @"你是一个文章内容安全检测器。请检测用户提供的文章标题、摘要、正文三个部分是否包含以下不安全内容：
+                        1. 政治敏感内容（如危害国家安全、分裂国家、颠覆政权等）
+                        2. 生命危险内容（如自残、自杀、暴力伤害、恐怖活动等）
+                        3. 情色色情内容（如色情描写、淫秽信息、低俗内容等）
+                        4. 其他违法违规内容（如赌博、毒品、诈骗等）
+
+                        请综合评估三个部分，只要任意一部分存在风险，整篇文章即判定为不安全。
+                        必须返回 JSON 格式，格式如下：
+                        {
+                          ""passed"": true,   // true 表示安全，false 表示不安全
+                          ""reason"": ""如果不安全，说明具体原因；如果安全则返回空字符串""
+                        }
+                        只返回 JSON，不要有其他解释。"),
+                    new ChatMessage(ChatRole.User, fullText)
+                };
+
+                // 调用 AI 模型（可加超时控制）
+                var response = await _chatClient.GetResponseAsync(messages);
+                var raw = response.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Text ?? string.Empty;
+
+                // 提取 JSON
+                var json = ExtractJson(raw);
+
+                // 反序列化
+                var result = JsonSerializer.Deserialize<SafetyCheckResult>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                // 检测未通过
+                if (result != null && !result.Passed)
+                {
+                    var errors = new List<string> { result.Reason ?? "内容检测未通过（未提供具体原因）" };
+                    return AgentParameterRiskResult.Unsafe(errors);
+                }
+
+                // 通过
+                return AgentParameterRiskResult.Safe();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "验证文章内容安全性时发生异常，Title: {Title}, Summary: {Summary}, Content: {Content}",
+                    title, summary, content);
+                var errors = new List<string> { "内容安全检测服务异常，请稍后重试" };
+                return AgentParameterRiskResult.Unsafe(errors);
+            }
+        }
+
         // ==================== 私有检测器 ====================
 
-        /// <summary>
-        /// 检测修改标题的风险：
-        /// 1. 标题包含换行 → 像粘贴了正文
-        /// 2. 标题极短或无意义（如"."） → 可能误清空标题
-        /// 3. 标题含敏感指令
-        /// </summary>
+        // 检测修改标题的风险：标题包含换行 → 像粘贴了正文，标题极短或无意义（如"."） → 可能误清空标题，标题含敏感指令
         private static void DetectUpdateTitleRisks(AgentPlanStep step, List<string> errors)
         {
             var newTitle = GetStringParam(step.Parameters, "newTitle");
@@ -279,6 +365,50 @@ namespace CuteBlogSystem.Service
             }
         }
 
+        // 检测发布文章的风险：标题、正文、摘要、封面路径都必须看起来像有效发布参数
+        private static void DetectCreateArticleRisks(AgentPlanStep step, List<string> errors)
+        {
+            var title = GetStringParam(step.Parameters, "title");
+            var content = GetStringParam(step.Parameters, "content");
+            var summary = GetStringParam(step.Parameters, "summary");
+            var description = GetStringParam(step.Parameters, "description");
+            var coverUrl = GetStringParam(step.Parameters, "coverUrl");
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                if (title.Contains('\n') || title.Contains('\r'))
+                {
+                    errors.Add($"Step {step.StepNumber} 发布文章标题包含换行符，疑似误将正文填入标题字段。");
+                }
+
+                if (ContainsSensitiveInstruction(title))
+                {
+                    errors.Add($"Step {step.StepNumber} 发布文章标题包含高危意图关键词。");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                DetectArticleContentTextRisks(content, step.StepNumber, errors);
+            }
+
+            if (!string.IsNullOrWhiteSpace(summary) && ContainsSensitiveInstruction(summary))
+            {
+                errors.Add($"Step {step.StepNumber} 发布文章摘要包含高危意图关键词。");
+            }
+
+            if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(description))
+            {
+                errors.Add($"Step {step.StepNumber} 发布文章缺少正文且没有生成方向，存在无效发布风险。");
+            }
+
+            if (!string.IsNullOrWhiteSpace(coverUrl) &&
+                (coverUrl.Contains("..") || coverUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            {
+                errors.Add($"Step {step.StepNumber} 发布文章封面路径异常。");
+            }
+        }
+
         // ==================== 通用工具方法 ====================
 
         private static string GetStringParam(Dictionary<string, object> parameters, string key)
@@ -327,6 +457,45 @@ namespace CuteBlogSystem.Service
             // 检查归一化后的指令是否包含危险关键词（不区分大小写）
             return DangerousContentRevisionInstructions.Any(k =>
                 normalized.Contains(k, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 从可能包含 Markdown 或多余文本的字符串中提取纯 JSON 对象
+        private static string ExtractJson(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            var trimmed = text.Trim();
+            var start = trimmed.IndexOf('{');
+            var end = trimmed.LastIndexOf('}');
+            if (start >= 0 && end > start)
+                return trimmed.Substring(start, end - start + 1);
+
+            return trimmed;
+        }
+
+        // AI 返回的检测结果结构
+        private class SafetyCheckResult
+        {
+            public bool Passed { get; set; }
+            public string? Reason { get; set; }
+        }
+
+        // 将标题、摘要、正文拼接为完整的检测文本
+        private static string BuildFullContent(string? title, string? summary, string? content)
+        {
+            var parts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(title))
+                parts.Add($"【标题】{title}");
+
+            if (!string.IsNullOrWhiteSpace(summary))
+                parts.Add($"【摘要】{summary}");
+
+            if (!string.IsNullOrWhiteSpace(content))
+                parts.Add($"【正文】{content}");
+
+            return string.Join("\n\n", parts);
         }
     }
 }

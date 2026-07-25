@@ -3,7 +3,7 @@ using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
-using CuteBlogSystem.Util;
+using CuteBlogSystem.Helper;
 
 namespace CuteBlogSystem.Service
 {

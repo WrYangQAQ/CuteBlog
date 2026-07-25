@@ -12,6 +12,8 @@ namespace CuteBlogSystem.Service
 {
     public class ArticleService
     {
+        private const string AgentDefaultCoverUrl = "/Picture/ArticleImage/Cover/dc47c400-b7ec-45b4-8ec3-a12e859973b1.png";
+
         private readonly ArticleRepository _articleRepository;
         private readonly ArticleLikeRepository _articleLikeRepository;
         private readonly ImageUploadService _imageUploadService;
@@ -215,23 +217,30 @@ namespace CuteBlogSystem.Service
                     CoverUrl = publishArticleDTO.CoverUrl
                 };
 
-                // 将封面图片从临时路径移动到正式路径（如果有封面图片）
-                var finalize = await _imageUploadService.FinalizeTempCoverAsync(
-                       publishArticleDTO.CoverUrl, userId,
-                       "Picture/ArticleImage/CoverTemp",
-                       "Picture/ArticleImage/Cover");
-
-                if (!finalize.Success)
+                if (publishArticleDTO.CoverUrl == AgentDefaultCoverUrl)
                 {
-                    return finalize; // 如果移动失败，直接返回失败响应
+                    article.CoverUrl = AgentDefaultCoverUrl;
                 }
+                else
+                {
+                    // 将封面图片从临时路径移动到正式路径（如果有封面图片）
+                    var finalize = await _imageUploadService.FinalizeTempCoverAsync(
+                           publishArticleDTO.CoverUrl, userId,
+                           "Picture/ArticleImage/CoverTemp",
+                           "Picture/ArticleImage/Cover");
 
-                finalCoverUrl = finalize.Data?.ToString();
-                article.CoverUrl = finalCoverUrl!;
+                    if (!finalize.Success)
+                    {
+                        return finalize; // 如果移动失败，直接返回失败响应
+                    }
+
+                    finalCoverUrl = finalize.Data?.ToString();
+                    article.CoverUrl = finalCoverUrl!;
+                }
 
 
                 // 调用仓储层的方法将文章保存到数据库中
-                await _articleRepository.AddArticleAsync(article);
+                var newArticle = await _articleRepository.AddArticleAsync(article);
 
                 // 将文章与标签关联起来，并保存到数据库中
                 if (publishArticleDTO.TagIds?.Any() == true)
@@ -256,7 +265,7 @@ namespace CuteBlogSystem.Service
                 }
 
                 await transaction.CommitAsync();
-                return new ApiResponse(true, "发布文章成功！");
+                return new ApiResponse(true, "发布文章成功！", newArticle.Id);
             }
             catch (Exception ex)
             {
@@ -976,7 +985,7 @@ namespace CuteBlogSystem.Service
 
         // 根据内容从不同维度查找文章
         public async Task<ApiResponse> GetArticlesBySelection(string queryText, ArticleSearchScope scope,
-            bool onlyMine, ArticleSortBy sortBy, int? userId, int top = 10)
+            bool onlyMine, ArticleSortBy sortBy, int? userId)
         {
             try
             {
@@ -985,14 +994,6 @@ namespace CuteBlogSystem.Service
                     return new ApiResponse(
                         false,
                         "查询内容不能为空！",
-                        code: ResponseCode.InvalidInput);
-                }
-
-                if (top <= 0 || top > 10)
-                {
-                    return new ApiResponse(
-                        false,
-                        "top 必须在 1 到 10 之间！",
                         code: ResponseCode.InvalidInput);
                 }
 
@@ -1074,7 +1075,6 @@ namespace CuteBlogSystem.Service
                 };
 
                 var articleList = articles
-                    .Take(top)
                     .Select(article => new GetArticleListDTO(article))
                     .ToList();
 

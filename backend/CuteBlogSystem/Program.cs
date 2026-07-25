@@ -3,7 +3,7 @@ using CuteBlogSystem.AI.Plugins;
 using CuteBlogSystem.Config;
 using CuteBlogSystem.Repository;
 using CuteBlogSystem.Service;
-using CuteBlogSystem.Util;
+using CuteBlogSystem.Helper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -116,6 +116,7 @@ builder.Services.AddScoped<AgentTestCaseRepository>();
 builder.Services.AddScoped<AgentEvaluationResultRepository>();
 builder.Services.AddScoped<AgentEvaluationRunRepository>();
 builder.Services.AddScoped<AgentEvaluationReportSnapshotRepository>();
+builder.Services.AddScoped<UserLongTermMemoryRepository>();
 
 // 注册自定义服务
 builder.Services.AddScoped<UserService>();
@@ -142,6 +143,37 @@ builder.Services.AddScoped<AgentPendingConfirmationService>();
 builder.Services.AddScoped<AgentEvaluationService>();
 builder.Services.AddScoped<AgentParameterPermissionService>();
 builder.Services.AddScoped<AgentParameterRiskService>();
+builder.Services.AddScoped<UserLongTermMemoryService>();
+
+// 绑定并校验长期记忆生命周期任务配置
+builder.Services
+    .AddOptions<LongTermMemoryLifecycleJobOptions>()
+    .Bind(
+        builder.Configuration.GetSection(
+            LongTermMemoryLifecycleJobOptions.SectionName))
+    .Validate(
+        options =>
+            options.RunAtLocalTime >= TimeSpan.Zero &&
+            options.RunAtLocalTime < TimeSpan.FromDays(1),
+        "长期记忆生命周期任务执行时间必须在00:00:00到23:59:59之间")
+    .Validate(
+        options => options.BatchSize > 0,
+        "长期记忆生命周期任务BatchSize必须大于0")
+    .Validate(
+        options => options.MaxBatchesPerRun > 0,
+        "长期记忆生命周期任务MaxBatchesPerRun必须大于0")
+    .Validate(
+        options =>
+            options.ArchiveConfidenceThreshold >= 0m &&
+            options.ArchiveConfidenceThreshold <= 1m,
+        "长期记忆归档置信度阈值必须在0到1之间")
+    .Validate(
+        options => options.ArchiveIdleDays > 0,
+        "长期记忆归档闲置天数必须大于0")
+    .Validate(
+        options => options.SoftDeleteRetentionDays > 0,
+        "长期记忆软删除保留天数必须大于0")
+    .ValidateOnStart();
 
 // 注册 AIShield 安全防护服务，用于 Agent 输入、输出和工具调用检测
 builder.Services.AddHttpClient<AIShieldService>(client =>
@@ -155,7 +187,7 @@ builder.Services.AddHttpClient<AIShieldService>(client =>
 });
 
 // 注册JwtUtil服务
-builder.Services.AddScoped<JwtUtil>();
+builder.Services.AddScoped<JwtHelper>();
 
 // 注册Swagger服务
 builder.Services.AddEndpointsApiExplorer();
@@ -220,8 +252,11 @@ builder.Services.AddScoped<Kernel>(sp =>
 // 过滤器全局注册
 builder.Services.AddScoped<IFunctionInvocationFilter, FunctionInvocationLoggingFilter>();
 
-// 注册临时封面清理后台服务
+// 注册长期临时封面清理后台服务
 builder.Services.AddHostedService<TempCoverCleanupHostedService>();
+
+// 注册长期记忆生命周期后台服务
+builder.Services.AddHostedService<LongTermMemoryLifecycleHosted>();
 
 // 注册雪花ID生成器为单例服务
 var snowflakeConfig = new IdGeneratorOptions { WorkerId = 1 };

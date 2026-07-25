@@ -1,6 +1,6 @@
 ﻿using Yitter.IdGenerator;
 
-namespace CuteBlogSystem.Util
+namespace CuteBlogSystem.Helper
 {
     public static class IDCreator
     {

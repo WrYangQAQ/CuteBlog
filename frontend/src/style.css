@@ -2860,11 +2860,13 @@ body {
 
 .agent-eval-case {
   min-width: 0;
+  min-height: 86px;
   border: 1px solid #d5e6fa;
   border-radius: 9px;
   background: #fff;
   color: #263d5e;
   display: grid;
+  grid-template-rows: 1fr auto;
   gap: 8px;
   padding: 9px 10px;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background 0.18s ease;
@@ -2949,11 +2951,11 @@ body {
 
 
 .agent-eval-add-card {
-  min-height: 104px;
   border-style: dashed;
   background: #f8fbff;
   color: #3b78d8;
   cursor: pointer;
+  grid-template-rows: 1fr;
   place-items: center;
   justify-content: center;
   align-content: center;
@@ -3716,7 +3718,7 @@ body {
 }
 
 .agent-eval-body.tab-cases .agent-eval-add-card {
-  min-height: 112px;
+  min-height: 86px;
 }
 
 .agent-eval-body.tab-runs {

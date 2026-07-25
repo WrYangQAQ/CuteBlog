@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 
-namespace CuteBlogSystem.Util
+namespace CuteBlogSystem.Helper
 {
     public static class AiChatHelper
     {

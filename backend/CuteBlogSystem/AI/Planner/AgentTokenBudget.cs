@@ -57,6 +57,9 @@
         // 文章润色最大输出 Token
         public const int ContentPolishMaxOutputTokens = 2048;
 
+        // 提炼用户长期记忆最大输出 Token
+        public const int LongTermMemoryExtractMaxOutputTokens = 300;
+
         // 检查用户消息是否超过最大允许长度
         public static bool IsUserMessageTooLong(string userMessage)
         {

@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
-using CuteBlogSystem.Entity;
+﻿using CuteBlogSystem.Entity;
+using CuteBlogSystem.Enum;
+using Microsoft.EntityFrameworkCore;
 
 namespace CuteBlogSystem.Config
 {
@@ -25,6 +26,7 @@ namespace CuteBlogSystem.Config
         public DbSet<AgentEvaluationResult> AgentEvaluationResults { get; set; }
         public DbSet<AgentEvaluationRun> AgentEvaluationRuns { get; set; }
         public DbSet<AgentEvaluationReportSnapshot> AgentEvaluationReportSnapshots { get; set; }
+        public DbSet<UserLongTermMemory> UserLongTermMemories { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -388,6 +390,158 @@ namespace CuteBlogSystem.Config
                 entity.HasIndex(x => x.RunId).IsUnique();
                 entity.HasIndex(x => x.CreatedAt);
                 entity.HasIndex(x => x.IsDeleted);
+            });
+
+            // ========== 配置 UserLongTermMemory（Agent跨会话长期记忆表） ==========
+            modelBuilder.Entity<UserLongTermMemory>(entity =>
+            {
+                entity.ToTable("UserLongTermMemories", table =>
+                {
+                    table.HasCheckConstraint(
+                        "CK_UserLongTermMemories_Confidence",
+                        "[Confidence] >= 0 AND [Confidence] <= 1");
+
+                    table.HasCheckConstraint(
+                        "CK_UserLongTermMemories_Importance",
+                        "[Importance] >= 0 AND [Importance] <= 1");
+
+                    table.HasCheckConstraint(
+                        "CK_UserLongTermMemories_AccessCount",
+                        "[AccessCount] >= 0");
+
+                    table.HasCheckConstraint(
+                        "CK_UserLongTermMemories_RevisionNo",
+                        "[RevisionNo] >= 1");
+
+                    table.HasCheckConstraint(
+                        "CK_UserLongTermMemories_MetadataJson",
+                        "[MetadataJson] IS NULL OR ISJSON([MetadataJson]) = 1");
+                });
+
+                // 主键：保留默认聚集索引
+                entity.HasKey(e => e.MemoryId);
+
+                entity.Property(e => e.MemoryId)
+                    .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                // 用户外键
+                entity.Property(e => e.UserId)
+                    .IsRequired();
+
+                // 枚举按字符串保存
+                entity.Property(e => e.MemoryType)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.Property(e => e.SourceType)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                // 记忆内容
+                entity.Property(e => e.MemoryGroup)
+                    .HasConversion<byte>()
+                    .HasColumnType("tinyint")
+                    .HasDefaultValue(MemoryGroupConstants.Unknown)
+                    .HasSentinel(MemoryGroupConstants.Unknown);
+
+                entity.Property(e => e.MemoryKey)
+                    .HasMaxLength(255);
+
+                entity.Property(e => e.Content)
+                    .IsRequired();
+
+                entity.Property(e => e.ContentHash)
+                    .HasMaxLength(64)
+                    .IsFixedLength()
+                    .IsUnicode(false)
+                    .IsRequired();
+
+                entity.Property(e => e.MetadataJson);
+
+                // 来源追踪
+                entity.Property(e => e.SourceSessionId)
+                    .HasMaxLength(100);
+
+                entity.Property(e => e.SourceAction)
+                    .HasMaxLength(256);
+
+                // 评分
+                entity.Property(e => e.Confidence)
+                    .HasPrecision(5, 4)
+                    .HasDefaultValue(0.5000m);
+
+                entity.Property(e => e.Importance)
+                    .HasPrecision(5, 4)
+                    .HasDefaultValue(0.5000m);
+
+                entity.Property(e => e.IsPinned)
+                    .HasDefaultValue(false);
+
+                // 访问统计
+                entity.Property(e => e.AccessCount)
+                    .HasDefaultValue(0);
+
+                // 状态按 TINYINT 保存
+                entity.Property(e => e.Status)
+                    .HasConversion<byte>()
+                    .HasColumnType("tinyint")
+                    .HasDefaultValue(MemoryStatus.Active)
+                    .HasSentinel(MemoryStatus.Unknown);
+
+                // 版本号
+                entity.Property(e => e.RevisionNo)
+                    .HasDefaultValue(1);
+
+                // 乐观并发
+                entity.Property(e => e.RowVersion)
+                    .IsRowVersion()
+                    .IsRequired();
+
+                // 自关联版本链
+                entity.HasOne(e => e.SupersedesMemory)
+                    .WithMany()
+                    .HasForeignKey(e => e.SupersedesMemoryId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // 用户外键
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // 同一用户下，当前有效 MemoryKey 唯一
+                entity.HasIndex(e => new { e.UserId, e.MemoryKey, e.MemoryGroup, e.MemoryType })
+                    .IsUnique()
+                    .HasFilter($"[MemoryKey] IS NOT NULL AND [Status] = {(byte)MemoryStatus.Active}");
+
+                // 用户有效记忆召回和重要性排序
+                entity.HasIndex(e => new { e.UserId, e.Status, e.Importance })
+                    .IsDescending(false, false, true);
+
+                // 用户历史记忆查询
+                entity.HasIndex(e => new
+                {
+                    e.UserId,
+                    e.CreatedAt
+                })
+                    .IsDescending(false, true);
+
+                // 全局衰减任务
+                entity.HasIndex(e => new
+                {
+                    e.Status,
+                    e.IsPinned,
+                    e.LastDecayAt
+                });
+
+                // 用户级内容去重
+                entity.HasIndex(e => new
+                {
+                    e.UserId,
+                    e.ContentHash
+                });
             });
 
             base.OnModelCreating(modelBuilder);

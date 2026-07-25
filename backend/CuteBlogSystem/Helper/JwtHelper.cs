@@ -3,15 +3,15 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
-namespace CuteBlogSystem.Util
+namespace CuteBlogSystem.Helper
 {
-    public class JwtUtil
+    public class JwtHelper
     {
         private readonly IConfiguration _configuration;
 
         private const int TokenExpirationHours = 7 * 24; // Token 有效期（小时）
 
-        public JwtUtil(IConfiguration configuration)
+        public JwtHelper(IConfiguration configuration)
         {
             _configuration = configuration;
         }

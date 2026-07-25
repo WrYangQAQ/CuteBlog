@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace CuteBlogSystem.Util
+namespace CuteBlogSystem.Helper
 {
     public static class CommentAuditHelper
     {

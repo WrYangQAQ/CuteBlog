@@ -44,6 +44,27 @@ namespace CuteBlogSystem.AI.Planner
         // 根据用户输入从文章列表中选择相应文章
         public const string SelectArticleFromList = nameof(SelectArticleFromList);
 
+        // 多维度检索文章列表
+        public const string SearchArticlesByKeyword = nameof(SearchArticlesByKeyword);
+
+        // 根据标签名称查找标签
+        public const string GetTagByName = nameof(GetTagByName);
+
+        // 根据标签查询文章列表
+        public const string SearchArticlesByTag = nameof(SearchArticlesByTag);
+
+        // 根据分类查询标签列表
+        public const string GetTagsByCategoryId = nameof(GetTagsByCategoryId);
+
+        // 根据内容推荐分类
+        public const string RecommendCategory = nameof(RecommendCategory);
+
+        // 根据内容推荐标签
+        public const string RecommendTags = nameof(RecommendTags);
+
+        // 发布文章
+        public const string CreateArticle = nameof(CreateArticle);
+
         // 所有允许执行的动作（主流程 + 补救流程）
         public static readonly HashSet<string> AllowedActions = new()
         {
@@ -59,7 +80,14 @@ namespace CuteBlogSystem.AI.Planner
             GenerateContentRevision,
             UpdateArticleContent,
             DeleteArticle,
-            SelectArticleFromList
+            SelectArticleFromList,
+            SearchArticlesByKeyword,
+            GetTagByName,
+            SearchArticlesByTag,
+            GetTagsByCategoryId,
+            RecommendCategory,
+            RecommendTags,
+            CreateArticle
         };
 
         // 仅补救计划允许执行的动作集合
@@ -69,7 +97,13 @@ namespace CuteBlogSystem.AI.Planner
             GetMyArticles,
             SearchArticlesByCategory,
             GetArticleContentById,
-            ExplainFailureWithSuggestions
+            ExplainFailureWithSuggestions,
+            SearchArticlesByKeyword,
+            GetTagByName,
+            SearchArticlesByTag,
+            GetTagsByCategoryId,
+            RecommendCategory,
+            RecommendTags
         };
 
         // SearchArticlesByCategory 动作中 sortBy 参数允许的值
@@ -107,7 +141,21 @@ namespace CuteBlogSystem.AI.Planner
 
             [ExplainFailureWithSuggestions] = AgentActionRiskLevel.ReadOnly,
 
-            [SelectArticleFromList] = AgentActionRiskLevel.ReadOnly
+            [SelectArticleFromList] = AgentActionRiskLevel.ReadOnly,
+
+            [SearchArticlesByKeyword] = AgentActionRiskLevel.ReadOnly,
+
+            [GetTagByName] = AgentActionRiskLevel.ReadOnly,
+
+            [SearchArticlesByTag] = AgentActionRiskLevel.ReadOnly,
+
+            [GetTagsByCategoryId] = AgentActionRiskLevel.ReadOnly,
+
+            [RecommendCategory] = AgentActionRiskLevel.ReadOnly,
+
+            [RecommendTags] = AgentActionRiskLevel.ReadOnly,
+
+            [CreateArticle] = AgentActionRiskLevel.RequireConfirmation
         };
 
         // 依据风险映射字典对行为风险等级进行查询

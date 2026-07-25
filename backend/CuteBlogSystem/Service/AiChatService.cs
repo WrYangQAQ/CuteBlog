@@ -1,4 +1,4 @@
-﻿using CuteBlogSystem.Util;
+﻿using CuteBlogSystem.Helper;
 using Microsoft.Extensions.AI;
 
 namespace CuteBlogSystem.Service

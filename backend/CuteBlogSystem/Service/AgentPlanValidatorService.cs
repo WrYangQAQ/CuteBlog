@@ -1,8 +1,6 @@
 ﻿using CuteBlogSystem.AI.Planner;
 using CuteBlogSystem.Enum;
-using CuteBlogSystem.Util;
-using System;
-using System.Numerics;
+using CuteBlogSystem.Helper;
 
 namespace CuteBlogSystem.Service
 {
@@ -148,6 +146,34 @@ namespace CuteBlogSystem.Service
                 case AgentActionRegistry.SelectArticleFromList:
                     ValidateSelectArticleFromListParameters(step, errors);
                     break;
+
+                case AgentActionRegistry.SearchArticlesByKeyword:
+                    ValidateSearchArticlesByKeywordParameters(step, errors);
+                    break;
+
+                case AgentActionRegistry.GetTagByName:
+                    RequireStringParameter(step, "tagName", errors);
+                    break;
+
+                case AgentActionRegistry.SearchArticlesByTag:
+                    ValidateSearchArticlesByTagParameters(step, errors);
+                    break;
+
+                case AgentActionRegistry.GetTagsByCategoryId:
+                    ValidateGetTagsByCategoryIdParameters(step, errors);
+                    break;
+
+                case AgentActionRegistry.RecommendCategory:
+                    ValidateContentOrReferenceParameters(step, "推荐分类", errors);
+                    break;
+
+                case AgentActionRegistry.RecommendTags:
+                    ValidateContentOrReferenceParameters(step, "推荐标签", errors);
+                    break;
+
+                case AgentActionRegistry.CreateArticle:
+                    ValidateCreateArticleParameters(step, errors);
+                    break;
             }
         }
 
@@ -242,6 +268,35 @@ namespace CuteBlogSystem.Service
                     if (GetIntParameter(step, "listFromStep") > 0)
                     {
                         ValidateSelectArticleFromListStepReference(step, plan, errors);
+                    }
+                    break;
+
+                case AgentActionRegistry.SearchArticlesByTag:
+                    if (GetIntParameter(step, "tagIdFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "tagIdFromStep", errors);
+                    }
+                    break;
+
+                case AgentActionRegistry.GetTagsByCategoryId:
+                    if (GetIntParameter(step, "categoryIdFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "categoryIdFromStep", errors);
+                    }
+                    break;
+
+                case AgentActionRegistry.RecommendCategory:
+                case AgentActionRegistry.RecommendTags:
+                    if (GetIntParameter(step, "contentFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "contentFromStep", errors);
+                    }
+                    break;
+
+                case AgentActionRegistry.CreateArticle:
+                    if (GetIntParameter(step, "categoryIdFromStep") > 0)
+                    {
+                        ValidateReferenceToPreviousStep(step, plan, "categoryIdFromStep", errors);
                     }
                     break;
             }
@@ -404,7 +459,13 @@ namespace CuteBlogSystem.Service
                         "contentFromStep",
                         AgentActionRegistry.GetArticleContentById,
                         errors);
+
+                    continue;
                 }
+
+                // 补救计划中的普通动作复用主流程参数校验，避免补救动作绕过结构约束
+                ValidateParameters(step, errors);
+                ValidateStepReferences(step, recoveryPlan, errors);
             }
 
             return errors.Count == 0
@@ -743,6 +804,136 @@ namespace CuteBlogSystem.Service
 
             // 调用通用引用校验：检查引用的步骤是否存在且位于当前步骤之前
             ValidateReferenceToPreviousStep(step, plan, "listFromStep", errors);
+        }
+
+        // 验证 SearchArticlesByKeyword 动作参数：查询文本必填，枚举参数必须合法，top 限制在服务层允许范围
+        private static void ValidateSearchArticlesByKeywordParameters(AgentPlanStep step, List<string> errors)
+        {
+            RequireStringParameter(step, "queryText", errors);
+
+            var searchScope = GetStringParameter(step, "searchScope", ArticleSearchScope.ByAll.ToString());
+            if (!System.Enum.TryParse<ArticleSearchScope>(searchScope, ignoreCase: true, out _))
+            {
+                errors.Add($"Step {step.StepNumber} 的 searchScope 不合法：{searchScope}。");
+            }
+
+            var articleScope = GetStringParameter(step, "articleScope", ArticleScope.All.ToString());
+            if (!System.Enum.TryParse<ArticleScope>(articleScope, ignoreCase: true, out _))
+            {
+                errors.Add($"Step {step.StepNumber} 的 articleScope 不合法：{articleScope}。");
+            }
+
+            var sortBy = GetStringParameter(step, "sortBy", ArticleSortBy.Latest.ToString());
+            if (!System.Enum.TryParse<ArticleSortBy>(sortBy, ignoreCase: true, out _))
+            {
+                errors.Add($"Step {step.StepNumber} 的 sortBy 不合法：{sortBy}。只能是 Latest、MostLiked、MostViewed。");
+            }
+
+            var top = GetIntParameter(step, "top", 10);
+            if (top <= 0 || top > 10)
+            {
+                errors.Add($"Step {step.StepNumber} 的 top 必须在 1 到 10 之间。");
+            }
+        }
+
+        // 验证 SearchArticlesByTag 动作参数：tagId 与 tagIdFromStep 二选一
+        private static void ValidateSearchArticlesByTagParameters(AgentPlanStep step, List<string> errors)
+        {
+            var tagId = GetIntParameter(step, "tagId");
+            var tagIdFromStep = GetIntParameter(step, "tagIdFromStep");
+
+            if (tagId <= 0 && tagIdFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 tagId 或 tagIdFromStep。");
+            }
+
+            if (tagId > 0 && tagIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 tagId 和 tagIdFromStep 只能二选一。");
+            }
+
+            var sortBy = GetStringParameter(step, "sortBy", ArticleSortBy.Latest.ToString());
+            if (!System.Enum.TryParse<ArticleSortBy>(sortBy, ignoreCase: true, out _))
+            {
+                errors.Add($"Step {step.StepNumber} 的 sortBy 不合法：{sortBy}。只能是 Latest、MostLiked、MostViewed。");
+            }
+
+            var top = GetIntParameter(step, "top", 10);
+            if (top <= 0 || top > 10)
+            {
+                errors.Add($"Step {step.StepNumber} 的 top 必须在 1 到 10 之间。");
+            }
+        }
+
+        // 验证 GetTagsByCategoryId 动作参数：分类 ID、分类来源步骤或分类名称至少提供一个
+        private static void ValidateGetTagsByCategoryIdParameters(AgentPlanStep step, List<string> errors)
+        {
+            var categoryId = GetIntParameter(step, "categoryId");
+            var categoryIdFromStep = GetIntParameter(step, "categoryIdFromStep");
+            var categoryName = GetStringParameter(step, "categoryName");
+
+            if (categoryId <= 0 && categoryIdFromStep <= 0 && string.IsNullOrWhiteSpace(categoryName))
+            {
+                errors.Add($"Step {step.StepNumber} 必须提供 categoryId、categoryIdFromStep 或 categoryName。");
+            }
+
+            if (categoryId > 0 && categoryIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 categoryId 和 categoryIdFromStep 只能二选一。");
+            }
+        }
+
+        // 验证内容推荐类动作参数：content 与 contentFromStep 二选一
+        private static void ValidateContentOrReferenceParameters(
+            AgentPlanStep step,
+            string actionName,
+            List<string> errors)
+        {
+            var content = GetStringParameter(step, "content");
+            var contentFromStep = GetIntParameter(step, "contentFromStep");
+
+            if (string.IsNullOrWhiteSpace(content) && contentFromStep <= 0)
+            {
+                errors.Add($"Step {step.StepNumber} 执行{actionName}时必须提供 content 或 contentFromStep。");
+            }
+
+            if (!string.IsNullOrWhiteSpace(content) && contentFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 content 和 contentFromStep 只能二选一。");
+            }
+        }
+
+        // 验证 CreateArticle 动作参数：必须能确定分类，并提供内容来源
+        private static void ValidateCreateArticleParameters(AgentPlanStep step, List<string> errors)
+        {
+            var categoryId = GetIntParameter(step, "categoryId");
+            var categoryIdFromStep = GetIntParameter(step, "categoryIdFromStep");
+            var categoryName = GetStringParameter(step, "categoryName");
+
+            if (categoryId <= 0 && categoryIdFromStep <= 0 && string.IsNullOrWhiteSpace(categoryName))
+            {
+                errors.Add($"Step {step.StepNumber} 发布文章时必须提供 categoryId、categoryIdFromStep 或 categoryName。");
+            }
+
+            if (categoryId > 0 && categoryIdFromStep > 0)
+            {
+                errors.Add($"Step {step.StepNumber} 的 categoryId 和 categoryIdFromStep 只能二选一。");
+            }
+
+            var title = GetStringParameter(step, "title");
+            var content = GetStringParameter(step, "content");
+            var description = GetStringParameter(step, "description");
+
+            if (string.IsNullOrWhiteSpace(description) &&
+                (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content)))
+            {
+                errors.Add($"Step {step.StepNumber} 发布文章时必须提供完整标题正文，或提供 description 让 AI 生成草稿。");
+            }
+
+            if (!string.IsNullOrWhiteSpace(title) && title.Length > 30)
+            {
+                errors.Add($"Step {step.StepNumber} 的 title 不能超过 30 个字符。");
+            }
         }
     }
 }

@@ -1644,9 +1644,6 @@ onBeforeUnmount(() => {
 
             <p v-if="evaluationCaseLoading" class="agent-log-empty">正在加载测试用例...</p>
             <div v-else class="agent-eval-case-grid">
-              <button type="button" class="agent-eval-case agent-eval-add-card" @click="openNewEvaluationCaseForm">
-                <Plus :size="28" />
-              </button>
               <p v-if="!evaluationTestCases.length" class="agent-log-empty agent-eval-grid-empty">暂无测试用例</p>
               <article
                 v-for="item in evaluationTestCases"
@@ -1670,6 +1667,9 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </article>
+              <button type="button" class="agent-eval-case agent-eval-add-card" @click="openNewEvaluationCaseForm">
+                <Plus :size="28" />
+              </button>
             </div>
           </section>
 

@@ -3,7 +3,7 @@ using CuteBlogSystem.DTO.Agent;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
-using CuteBlogSystem.Util;
+using CuteBlogSystem.Helper;
 using Microsoft.Extensions.AI;
 using System.Text;
 using System.Text.Json;

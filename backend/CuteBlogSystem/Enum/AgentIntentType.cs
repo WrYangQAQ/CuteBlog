@@ -5,6 +5,7 @@
         ExecuteWorkflow = 1,
         ResetContext = 2,
         DirectChat = 3,
-        Unsupported = 4
+        Unsupported = 4,
+        ForgetLongTermMemory = 5
     }
 }

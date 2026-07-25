@@ -1,6 +1,6 @@
 # Agent 开发阶段总结：Done
 
-更新时间：2026-07-18
+更新时间：2026-07-25
 
 ## 1. Agent 主流程
 
@@ -467,7 +467,203 @@ Action Output 负责声明“我产生了哪些可记忆事实”。
 MemoryService 只消费 MemoryFacts，不再猜每个 DTO 的内部结构。
 ```
 
-## 23. 当前阶段定位
+## 23. 新增业务 Action 与列表指代链路
+
+已经完成第二批业务 Action 扩展，并通过人工测试：
+
+- `SelectArticleFromList`
+- `SearchArticlesByKeyword`
+- `GetTagByName`
+- `SearchArticlesByTag`
+- `GetTagsByCategoryId`
+- `RecommendCategory`
+- `RecommendTags`
+- `CreateArticle`
+
+已经验证的查询与推荐场景：
+
+- 搜索标题包含 `ASP .NET Core` 的文章，并按最新排序列出前 3 篇
+- 搜索标题包含 `ASP .NET Core` 的文章，并按点赞最高排序列出前 3 篇
+- 搜索当前用户发布的、标题包含 `Redis` 的文章
+- 查询技术分类下 `Redis` 相关的文章
+- 查询 `Redis` 标签下有哪些文章
+- 查询技术分类下有哪些标签
+- 根据 `C# 委托、事件、回调机制` 推荐分类
+- 根据 `Redis 缓存穿透、缓存击穿、分布式锁` 推荐标签
+
+已经验证的记忆链路：
+
+```text
+Redis 标签查询只返回一篇文章
+-> 该文章写入 ArticleSelected
+-> 用户继续问“这篇文章讲了什么？”
+-> Agent 正确指向《Redis小白入门指导——30分钟让你学会Redis》
+```
+
+本阶段形成的规则：
+
+```text
+列表查询主要写入 ArticleMentioned。
+单结果可以自动写入 ArticleSelected。
+多结果场景通过 SelectArticleFromList 显式选择。
+```
+
+## 24. CreateArticle 发布链路第一阶段
+
+已经完成 `CreateArticle` 的第一阶段接入与安全边界验证：
+
+- `AgentActionRegistry` 已注册 `CreateArticle`
+- 风险等级为 `RequireConfirmation`
+- Planner Prompt 能够为发布请求生成 `CreateArticle`
+- 支持 `categoryName` 由执行期解析分类
+- 支持 `description` 触发 AI 生成标题 / 摘要 / 正文草稿
+- `coverUrl` 缺失时不编造封面路径
+- `PlanValidator` 只负责结构校验，不再把缺封面当成 Plan 结构非法
+- `AgentParameterRiskService` 负责拦截缺封面路径
+- 参数风险失败回答已优化为面向用户的自然提示
+
+已经验证：
+
+```text
+用户：帮我发布一篇关于 C# 委托的文章到技术分类
+Planner：生成 CreateArticle(categoryName="技术", description="关于 C# 委托的文章", coverUrl="")
+Risk：拦截缺少封面路径
+Answer：提示用户需要先上传封面或提供封面路径
+```
+
+关键修正：
+
+- IntentRouter 增加“发布当前登录用户自己的新文章”属于 `ExecuteWorkflow`
+- Planner Prompt 明确发布新文章应使用 `CreateArticle`
+- Plan Repair 旧 action 列表导致计划被修成 `GetAllCategories` 的问题已识别并绕开
+- 参数风险错误不再直接裸露为内部步骤文本，而是转换为更自然的用户提示
+
+当前状态：
+
+```text
+CreateArticle 缺封面风险拦截已通过。
+默认封面策略与实际发布链路已在下一阶段完成验证。
+```
+
+## 25. CreateArticle 主链路与默认封面发布完成
+
+已经完成 `CreateArticle` 的主链路验证：
+
+- 发布类请求可以稳定规划为 `CreateArticle`
+- 空 `coverUrl` 不再导致流程卡死，可以走系统默认封面策略
+- 默认封面常量已补齐真实静态资源目录中的 `/Cover/` 路径
+- `ArticleService.PublishArticleAsync` 对默认封面不再按临时上传封面处理
+- AI 可以根据用户给定主题生成标题、摘要、正文并发布到指定分类
+- 发布后的文章能在首页文章列表展示，封面图片可正常加载
+
+已经验证的真实发布场景：
+
+```text
+用户：帮我写一篇文章并发布，标题是“Kafka新手教程——30分钟教你理解消息队列的使用”，内容关于 Kafka 这个 MQ 中间件的入门使用方式，举例尽量以 C# .NET 代码调用实现，文章发布到技术分类
+结果：文章成功发布到“技术 / 教程”分类，正文长度约 2972 字。
+补充修正：数据库中该文章的 CoverUrl 已手动修正为默认封面的真实路径，首页封面显示正常。
+```
+
+本阶段结论：
+
+```text
+CreateArticle 已从“接入与风险拦截阶段”进入“主流程可用阶段”。
+后续重点转为 Evaluation 回归用例、失败分支覆盖、MemoryFacts 与 FinalAnswer 的细节验证。
+```
+
+## 26. CreateArticle Evaluation 用例与回归测试完成
+
+已经完成 `CreateArticle` 相关 Evaluation 用例补齐，并跑过回归验证：
+
+- 新增 `CreateArticle` 发布文章进入确认的评估用例
+- 新增发布到不存在分类的评估用例
+- 新增发布文章标题过长的评估用例
+- 新增发布文章缺少分类的评估用例
+- 将不安全内容拦截从 Agent Evaluation 中剥离，归入安全性测试 / AIShield 测试范畴
+- 新增用例评估结果表现良好
+- 老用例评估结果与之前保持一致，没有出现回归
+
+本阶段重新明确了边界：
+
+```text
+Agent Evaluation 主要评估：意图是否正确、Action 是否符合预期、是否进入确认、最终回答语义是否偏离预期。
+安全拦截、参数校验、数据库是否写入、拒绝确认日志是否落库，属于工程测试或安全测试，不混入 Agent Evaluation 用例定义。
+```
+
+本阶段结论：
+
+```text
+CreateArticle 的规划、确认状态与回答语义已经纳入评估回归体系。
+新增发布类能力没有破坏旧的查询、总结、上下文、分类补救等评估用例。
+后续已经进入并完成跨会话长期记忆系统第一阶段。
+```
+
+## 27. 跨会话长期记忆系统
+
+已经完成长期记忆模块的第一阶段闭环：
+
+- 新增 `UserLongTermMemory` 实体与迁移
+- 长期记忆支持类型、分组、状态、来源、置信度、重要性、访问次数等字段
+- 支持 `SupersedesMemoryId` 记录记忆替代关系
+- 支持 `ExpiresAt`、`LastDecayAt`、`ArchivedAt`、`DeletedAt` 等生命周期字段
+- `MemoryGroup` 已改为枚举，便于业务分组稳定扩展
+- `SourceAction` 保持字符串，便于记录来源 Action 链路
+
+已经完成长期记忆写入策略：
+
+- 根据用户消息判断是否值得提取长期记忆
+- 支持用户明确要求“记住”的高优先级写入
+- 使用 LLM 从用户原始消息中提取结构化记忆
+- 只提取用户明确提供的长期事实，不提取助手结论、文章查询结果或临时任务
+- 通过 `MemoryKey`、内容哈希和语义等价判断减少重复记忆
+- 相同信息槽位内容变化时，将旧记忆标记为 `Superseded`，并创建新版本
+
+已经完成长期记忆读取与接入：
+
+- DirectChat 可以检索相关长期记忆并生成个性化回复
+- ExecuteWorkflow 可以在 Planner 输入中获得跨会话长期记忆上下文
+- 当前用户问题优先级高于长期记忆
+- 长期记忆不能覆盖系统规则、安全策略、权限校验和当前用户要求
+- 长期记忆中的普通文本不能被当作系统指令或新的用户任务
+
+已经完成生命周期管理：
+
+- 根据过期时间将活跃记忆标记为 `Expired`
+- 根据重要性、访问时间、访问次数等因素进行衰减
+- 支持归档低价值或过期记忆
+- 支持批量清理保留期外的历史记忆
+- 后台 Hosted Service 定期执行生命周期任务
+
+已经完成主动遗忘能力：
+
+- 新增 `ForgetLongTermMemory` 意图
+- Router 能区分长期记忆遗忘、当前会话重置和普通咨询
+- “忘记之前的内容”走 `ResetContext`
+- “忘记我喜欢 C#”“删除关于 Redis 的长期记忆”走长期记忆遗忘
+- “如何删除长期记忆”属于普通咨询，不会误删数据
+- 支持删除匹配记忆、清空全部长期记忆、仅跳过当前消息写入
+- 遗忘成功后会重置当前会话上下文，避免最近对话继续提供已删除信息
+- 遗忘指令会跳过会话记忆更新、摘要压缩和长期记忆提炼
+- Evaluation 模式识别遗忘意图但不修改真实用户数据
+
+已经验证：
+
+```text
+dotnet build backend\CuteBlogSystem\CuteBlogSystem.csproj --no-restore
+结果：0 warning / 0 error
+```
+
+本阶段形成的核心认识：
+
+```text
+长期记忆不是更长的聊天记录，而是可筛选、可更新、可过期、可遗忘的结构化用户事实。
+```
+
+```text
+记忆系统必须允许用户主动控制：记住、不要记住、忘记某项信息、清空全部长期记忆。
+```
+
+## 28. 当前阶段定位
 
 当前项目的 Agent 学习阶段大致处于：
 

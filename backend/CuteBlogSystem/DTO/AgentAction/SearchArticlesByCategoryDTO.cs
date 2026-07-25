@@ -40,7 +40,7 @@ namespace CuteBlogSystem.DTO.AgentAction
             }
 
             var articleLines = Articles.Select((article, index) =>
-                $"{index + 1}. {article.Title}，分类：{article.CategoryName}，点赞数：{article.LikeCount}，浏览量：{article.ViewCount}");
+                $"{index + 1}. {article.Title}，ID：{article.Id}，分类：{article.CategoryName}，点赞数：{article.LikeCount}，浏览量：{article.ViewCount}");
 
             return $"""
             分类：{CategoryName}

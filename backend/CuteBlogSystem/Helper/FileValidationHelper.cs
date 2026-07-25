@@ -1,4 +1,4 @@
-﻿namespace CuteBlogSystem.Util
+﻿namespace CuteBlogSystem.Helper
 {
     public static class FileValidationHelper
     {

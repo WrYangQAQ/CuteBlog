@@ -4,7 +4,7 @@ using CuteBlogSystem.DTO.Blog;
 using CuteBlogSystem.Entity;
 using CuteBlogSystem.Enum;
 using CuteBlogSystem.Repository;
-using CuteBlogSystem.Util;
+using CuteBlogSystem.Helper;
 using Microsoft.Identity.Client;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Data;
@@ -19,7 +19,7 @@ namespace CuteBlogSystem.Service
         private readonly ArticleRepository _articleRepository;
         private readonly ArticleLikeRepository _articleLikeRepository;
         private readonly CommentRepository _commentRepository;
-        private readonly JwtUtil _jwtUtil;
+        private readonly JwtHelper _jwtUtil;
         private readonly IWebHostEnvironment _environment;
         private readonly ImageUploadService _imageUploadService;
         private readonly ILogger<UserService> _logger;
@@ -31,7 +31,7 @@ namespace CuteBlogSystem.Service
         private const long maxLength = 20;
 
         public UserService(UserRepository userRepository, 
-                           JwtUtil jwtUtil, 
+                           JwtHelper jwtUtil,
                            IWebHostEnvironment environment, 
                            ImageUploadService imageUploadService, 
                            ArticleRepository articleRepository,
